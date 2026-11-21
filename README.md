@@ -1,6 +1,16 @@
 # loadout
 
-One agent setup for every repo, and one local model per machine. Claude Code, Codex and Copilot Chat read the same `AGENTS.md`, share a context cache, and hand work to each other and to your local model through the `fusion` MCP server. Each frontier call goes through the official `claude` or `codex` CLI. Signed in with your plan, those calls draw from your subscription limits, the same windows as your own sessions (per [Anthropic's support page](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan), updated October 2026). They don't touch API credits.
+**The lowest-cost way to use several coding agents, if you already pay for Claude and ChatGPT.** Type `@loadout` in VS Code chat. Your local model takes the cheap work for free, and the rest goes to Claude Code or Codex, whichever subscription has more room left. Every reply says who answered and what it cost.
+
+What it combines, that the tools it learned from each do one piece of:
+- **Routing by how much of each subscription you have left,** read from the windows Claude Code and Codex report.
+- **Local-first by default:** rules and a 79-rule catalog, matched by your local model, decide what needs a frontier model. A background learner scores routers and agents on real outcomes and promotes a better decision maker as the evidence comes in.
+- **Local model setup for each machine:** find a server, or recommend one for your GPU and download and start it, then check that tool calls work.
+- **One shared agent setup per repo:** a single AGENTS.md for Claude Code, Codex and Copilot, a context cache, skills, and the `fusion` MCP server.
+
+Each frontier call goes through the official `claude` or `codex` CLI. Signed in with your plan, those calls draw from your subscription limits, the same windows as your own sessions (per [Anthropic's support page](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan), updated October 2026). They don't touch API credits.
+
+**Builds on:** [PAL MCP](https://github.com/BeehiveInnovations/pal-mcp-server) (one session reaching several models over MCP, which fusion follows), [Ruler](https://github.com/intellectronica/ruler) (one set of rules for every coding agent), and [pstack](https://github.com/backnotprop/pstack) or [Superpowers](https://github.com/obra/superpowers) for the skills.
 
 ## Install
 Everything runs on your machine. The only calls that leave it are the ones Claude Code and Codex make to your own subscriptions.
@@ -21,13 +31,13 @@ This builds and installs a chat participant that routes each request itself. The
 
 ## Add to a repo
 ```bash
-cd my-repo && loadout init          # or: loadout init path/to/repo [--no-pstack]
+cd my-repo && loadout init          # or: loadout init path/to/repo --skills pstack|superpowers|none
 ```
 It never overwrites your files, and it's safe to rerun:
 - It adds a marked section to an existing `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md`, and creates them if they're missing.
 - It merges `fusion` into `.mcp.json` and `.vscode/mcp.json`.
 - It copies the server into `.agents/fusion/`, so teammates need nothing installed but Node and the CLIs.
-- It adds pstack skills and a `.agents/context/` cache.
+- It adds skills (pstack by default, or Superpowers, or none) and a `.agents/context/` cache.
 
 Then fill in the **Project** and **Commands** sections of `AGENTS.md`.
 
@@ -44,4 +54,4 @@ Then fill in the **Project** and **Commands** sections of `AGENTS.md`.
 | `local-llm/` | `models.json` (recommendations per hardware tier) and `bench.sh` (speed, context-fit and tool-call checks) |
 
 ## Credits
-Skills: [pstack](https://github.com/backnotprop/pstack) by Lauren Tan (poteto), MIT.
+Skills: [pstack](https://github.com/backnotprop/pstack) by Lauren Tan (poteto), MIT, bundled. [Superpowers](https://github.com/obra/superpowers) by Jesse Vincent, MIT, downloaded by `loadout init --skills superpowers`. Ideas: [PAL MCP](https://github.com/BeehiveInnovations/pal-mcp-server), [Ruler](https://github.com/intellectronica/ruler).

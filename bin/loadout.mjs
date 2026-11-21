@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // loadout: one agent setup for every repo, and one local model per machine.
-//   loadout init [dir] [--no-pstack]     add the setup to a repo (default: current directory); safe to rerun
+//   loadout init [dir] [--skills pstack|superpowers|none]   add the setup to a repo (default: here, with pstack); safe to rerun
 //   loadout model [--url URL] [--ctx N]  find, check and configure this machine's local model server
 //   loadout model --recommend [--vram GiB] [--ram GiB]   recommend a model for this (or a hypothetical) machine
 //   loadout model --install [--yes] [--dry-run]           use a running server, or download and start the recommended one
@@ -8,11 +8,11 @@
 //   loadout setup                        one-time machine setup: PATH, local model, extension, then doctor
 //   loadout doctor [--json]              check the CLIs, their sign-ins and the local model
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline/promises';
-import { homedir, platform, arch, totalmem } from 'node:os';
+import { homedir, platform, arch, tmpdir, totalmem } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -100,13 +100,29 @@ function init(args) {
 
   for (const rel of ['.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs', '.agents/tasks/refresh-context.md']) copyOwned(root, rel);
 
-  if (!args.flags['no-pstack']) {
-    const src = join(LOADOUT, '.agents/skills');
-    if (resolve(root) === LOADOUT) report('.agents/skills/', 'unchanged');
+  // Skills: pstack ships with loadout (works offline); Superpowers (obra/superpowers, MIT) is cloned at install time.
+  const skills = args.flags['no-pstack'] ? 'none' : args.flags.skills || 'pstack';
+  if (!['pstack', 'superpowers', 'none'].includes(skills)) throw new Error(`--skills must be pstack, superpowers or none, not ${skills}`);
+  if (skills !== 'none') {
+    const stamp = skills === 'pstack' ? 'PSTACK_VERSION' : 'SUPERPOWERS_VERSION';
+    const before = existsSync(join(root, '.agents/skills', stamp)) ? read(join(root, '.agents/skills', stamp)) : null;
+    let src = join(LOADOUT, '.agents/skills'), version, tmp;
+    if (skills === 'superpowers') {
+      tmp = join(tmpdir(), `loadout-superpowers-${process.pid}`);
+      const clone = spawnSync('git', ['clone', '--depth', '1', '--quiet', 'https://github.com/obra/superpowers.git', tmp], { encoding: 'utf8' });
+      if (clone.status !== 0) throw new Error(`couldn't clone Superpowers: ${(clone.stderr || '').trim() || 'is git installed and are you online?'}`);
+      src = join(tmp, 'skills');
+      version = spawnSync('git', ['-C', tmp, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim() + '\n';
+    } else version = read(join(src, 'PSTACK_VERSION'));
+    if (resolve(root) === LOADOUT && skills === 'pstack') report('.agents/skills/', 'unchanged');
     else {
-      const before = existsSync(join(root, '.agents/skills/PSTACK_VERSION')) ? read(join(root, '.agents/skills/PSTACK_VERSION')) : null;
       cpSync(src, join(root, '.agents/skills'), { recursive: true });
-      report('.agents/skills/', before === null ? 'created' : before === read(join(src, 'PSTACK_VERSION')) ? 'unchanged' : 'updated');
+      if (skills === 'superpowers') {
+        writeFileSync(join(root, '.agents/skills', stamp), version);
+        cpSync(join(tmp, 'LICENSE'), join(root, '.agents/skills/SUPERPOWERS_LICENSE'));
+        rmSync(tmp, { recursive: true, force: true });
+      }
+      report(`.agents/skills/ (${skills})`, before === null ? 'created' : before === version ? 'unchanged' : 'updated');
     }
     linkSkills(root, '.claude/skills');
     linkSkills(root, '.github/skills');

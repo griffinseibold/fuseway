@@ -2,8 +2,8 @@
 
 `bin/loadout.mjs`, Node 22, no dependencies. Two layers: `init` is per repo, `model` is per machine.
 
-## init [dir] [--no-pstack]
-- **Owned by loadout** (copied, overwritten on rerun): `.agents/fusion/`, `.agents/tasks/refresh-context.md`, `.agents/skills/` (pstack).
+## init [dir] [--skills pstack|superpowers|none]
+- **Owned by loadout** (copied, overwritten on rerun): `.agents/fusion/`, `.agents/tasks/refresh-context.md`, `.agents/skills/`. pstack is bundled. Superpowers is `git clone --depth 1` of obra/superpowers at install time, with its commit in `SUPERPOWERS_VERSION` and its license as `SUPERPOWERS_LICENSE`. `--no-pstack` still means `--skills none`.
 - **Owned by the repo** (merged, never overwritten):
   - `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`: loadout's text goes between `<!-- loadout:begin -->` and `<!-- loadout:end -->`, replaced in place on rerun. New files come from `template/`. `CLAUDE.md` is left alone if it already has an `@AGENTS.md` line.
   - `.mcp.json`, `.vscode/mcp.json`, `.vscode/extensions.json`: a `fusion` entry is merged in. A file that isn't plain JSON (comments) is skipped, and the entry to add is printed.

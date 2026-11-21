@@ -10,6 +10,15 @@
 4. **Follow-ups** resume the backend's own session (`--resume`, `codex exec … resume <id>`; options must come before `resume`), and get a transcript of turns other backends handled since. Session ids ride in each reply's `metadata`.
 5. **Fail over**: a usage-limit error from Claude or Codex retries once on the other. A local run that errors or comes back empty retries on frontier. Neither happens when the user forced a backend.
 
+## The learner
+`learner.js` (no vscode import; tests in `test/learner.test.mjs`) keeps one event log, `~/.local/state/loadout/learning.jsonl` (`LOADOUT_LEARNING_LOG` overrides it). The event types are decision, router, outcome, label, escalated, agent, bench and switch, and scores are recomputed from the log.
+- **Candidates** are `cascade@<local model>` (the default), `local-only@<local model>` and `haiku`; `ROUTERS` lists them. `classifyWith(name)` runs one and measures its paid tokens and time. `freeShadows` reads other candidates' answers off a cascade run: one that asked Haiku shows Haiku's answer and that local-only would have said frontier.
+- **Outcomes** come from the next message (`outcomeFromNextTurn`: a failure phrase or switching backends is a failure, moving on is a success) or from `onDidReceiveFeedback`, which wins. **Labels** come only from local answers: success means local, failure or escalation means frontier.
+- **Score:** recency-weighted accuracy (half-life 7 days; test cases count half), minus 1 point per 1K paid tokens per decision and 0.5 per second. A switch needs ≥15 recent weighted results, a 3-point lead, and 24 h since the last switch, all in `POLICY`. A router tied to an unconfigured local model hands over right away.
+- **Background `tick`** runs 5 s after a turn when idle. It fills in missing router answers on the last 2 days of decisions, then gives thin candidates cases: this machine's labeled prompts first, then `route-cases.json`. Paid work stays within `loadout.learning.dailyPaidTokens`. It stops when a request arrives or the local model is down (nothing is recorded while offline). At most 6 jobs per tick.
+- **Live check (2026-11-21):** one request produced a decision with local-only's answer free, a background Haiku shadow (925 tokens), and 5 test cases for the cascade (5/5, free); `/stats` rendered.
+- **Limit:** frontier-served requests give no label, so over-escalation is only measured on test cases and on Haiku shadows of local answers.
+
 ## Setup from VS Code
 The VSIX bundles `bin/loadout.mjs`, `template/`, `.agents/fusion`, `.agents/skills`, the refresh task and `local-llm/` at their repo paths. `extension.js` runs the CLI with `process.execPath` and `ELECTRON_RUN_AS_NODE=1`, so VS Code's own Node runs it. On startup (`onStartupFinished`) it runs `doctor --json` and shows one notification if anything needs fixing. The commands are Check Setup, Set Up Local Model (`model --install` in a terminal) and Add to This Repo. The startup notification's Set Up button runs every failed check's `run` command in a terminal named "Loadout setup".
 

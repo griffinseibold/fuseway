@@ -3,7 +3,7 @@
   "publisher": "loadout",
   "displayName": "Loadout",
   "description": "@loadout chat participant: routes each request to the local model, Claude Code or Codex, and spends subscription quota only when needed.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "engines": {
     "vscode": "^1.100.0"
   },
@@ -35,6 +35,10 @@
           {
             "name": "usage",
             "description": "Show subscription windows and loadout's recent calls"
+          },
+          {
+            "name": "stats",
+            "description": "How the routers and agents are scoring, and who decides now"
           }
         ]
       }
@@ -90,6 +94,17 @@
           "maximum": 0.9,
           "default": 0,
           "description": "Share of Codex's windows kept for your own Codex sessions."
+        },
+        "loadout.learning.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Score routers and agents from outcomes in the background, and switch to a better decision maker when the evidence is clear. Everything stays in ~/.local/state/loadout/learning.jsonl on this machine."
+        },
+        "loadout.learning.dailyPaidTokens": {
+          "type": "number",
+          "default": 20000,
+          "minimum": 0,
+          "description": "Most Claude tokens per day the background learner may spend testing paid routers (about 1K per Haiku check). 0 tests only free ones."
         }
       }
     },

@@ -78,7 +78,7 @@ const kTokens = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
 // ctx: { prompt, turns: [{ user, meta: { backend } }], files: [{ path (repo-relative), bytes }], localContext, rules }
 // Returns { tier: 'local' | 'frontier' | 'same', backend?, trail } when a rule decides with no model, else null.
 function applyRules({ prompt, turns = [], files = [], localContext = 32768, rules = loadRules() }) {
-  const decide = (tier, why, backend) => ({ tier, backend, trail: [`rule: ${why}`] });
+  const decide = (tier, why, backend) => ({ tier, backend, structural: true, trail: [`rule: ${why}`] });
   const prev = turns.at(-1)?.meta?.backend;
   if ((prev === 'claude' || prev === 'codex') && prompt.length <= rules.followUpChars && !keywordHit(rules.catalog, 'local', prompt))
     return decide('same', `short follow-up stays with ${LABELS[prev]}`, prev);
@@ -175,7 +175,7 @@ async function classify(ctx, deps = { qwen: askQwen, haiku: askHaiku, log: appen
     try {
       const h = await deps.haiku(input, hint);
       deps.log({ backend: 'router-haiku', ok: true, in: h.tokens, out: 0 });
-      return { tier: h.label === 'LOCAL' ? 'local' : 'frontier', trail: [...trail, `Haiku: ${h.label}`] };
+      return { tier: h.label === 'LOCAL' ? 'local' : 'frontier', trail: [...trail, h.skipped ? 'no tiebreaker: frontier' : `Haiku: ${h.label}`] };
     } catch (e) {
       return { tier: 'frontier', trail: [...trail, `Haiku failed (${e.message})`] };
     }
@@ -194,6 +194,43 @@ async function classify(ctx, deps = { qwen: askQwen, haiku: askHaiku, log: appen
   if (q.tier === 'LOCAL') return { tier: 'local', trail: [matches.length ? `rule ≈ ${shown(matches[0])}` : 'no rule matched', 'Qwen: LOCAL'] };
   return haiku(['no rule matched', 'Qwen: FRONTIER']);
 }
+
+// Runs one router candidate (see learner.js ROUTERS) and measures what it cost.
+// cascade: classify as above. local-only: the same without Haiku, so anything Haiku would settle goes frontier.
+// haiku: structural rules, then Haiku alone, with any frontier keyword's rule as a hint.
+async function classifyWith(name, ctx, deps = { qwen: askQwen, haiku: askHaiku, log: appendUsage }) {
+  const t0 = Date.now();
+  let paidTokens = 0;
+  const haiku = async (input, hint) => { const h = await deps.haiku(input, hint); paidTokens += h.tokens || 0; return h; };
+  let out;
+  if (name === 'local-only') out = await classify(ctx, { ...deps, haiku: async () => ({ label: 'FRONTIER', tokens: 0, skipped: true }) });
+  else if (name === 'haiku') {
+    const rules = ctx.rules || loadRules();
+    out = applyRules({ ...ctx, rules });
+    if (!out) {
+      const word = keywordHit(rules.catalog, 'frontier', ctx.prompt);
+      try {
+        const h = await haiku(routerInput(ctx.prompt, ctx.turns?.at(-1)?.user), word?.rule.description);
+        deps.log({ backend: 'router-haiku', ok: true, in: h.tokens, out: 0 });
+        out = { tier: h.label === 'LOCAL' ? 'local' : 'frontier', trail: [...(word ? [`rule: ${word.rule.id} ("${word.word}")`] : []), `Haiku: ${h.label}`] };
+      } catch (e) { out = { tier: 'frontier', trail: [`Haiku failed (${e.message})`] }; }
+    }
+  } else out = await classify(ctx, { ...deps, haiku });
+  return { ...out, paidTokens, ms: Date.now() - t0 };
+}
+
+// Other candidates' answers that one run already reveals, at no extra cost. A cascade run that asked Haiku shows
+// Haiku's answer and that local-only would have said frontier; one that didn't shows local-only agrees.
+function freeShadows(name, route) {
+  if (route.structural) return {};
+  const haikuSaid = route.trail.map((t) => /^Haiku: (LOCAL|FRONTIER)$/.exec(t)).find(Boolean)?.[1];
+  const tier = (label) => (label === 'LOCAL' ? 'local' : 'frontier');
+  if (name === 'cascade') return { 'local-only': haikuSaid ? 'frontier' : route.tier, ...(haikuSaid ? { haiku: tier(haikuSaid) } : {}) };
+  if (name === 'local-only') return route.trail.includes('no tiebreaker: frontier') ? {} : { cascade: route.tier };
+  return {};
+}
+
+const offline = (route) => route.trail.some((t) => t.startsWith('local model offline'));
 
 // ---------- usage limits ----------
 
@@ -328,9 +365,14 @@ function spawnCli(bin, args, { cwd, signal, onLine } = {}) {
 async function run(backend, opts) {
   const start = Date.now();
   const entry = { backend, ok: false };
+  const window = () => (backend === 'local' ? null : readLimits()[backend]);
+  const before = window();
   try {
     const r = backend === 'claude' ? await runClaude(opts) : await runCodex(backend, opts);
-    Object.assign(entry, { ok: true, model: r.model, in: r.inTok, out: r.outTok, cost_usd: r.costUsd });
+    const after = window();
+    // Share of the 5-hour window this call used, when both readings are from the same window.
+    r.quota = before && after && before.resetsAt === after.resetsAt && after.used >= before.used ? after.used - before.used : 0;
+    Object.assign(entry, { ok: true, model: r.model, in: r.inTok, out: r.outTok, cost_usd: r.costUsd, quota: r.quota });
     return r;
   } catch (e) {
     Object.assign(entry, { error: e.message.slice(0, 300), limited: !!e.limited });
@@ -422,4 +464,4 @@ function usageMarkdown(hours = 5, now = Date.now()) {
 
 const localConfig = () => readJson(LOCAL_CONFIG, null);
 
-module.exports = { localConfig, LABELS, DEFAULT_RULES, loadRules, applyRules, keywordHit, matcherPrompt, classify, pickFrontier, readLimits, run, plan, usageMarkdown, claudeEvent, claudeState, codexEvent, codexState, claudeWindow, codexWindow, askQwen, askHaiku, BackendError };
+module.exports = { localConfig, LABELS, DEFAULT_RULES, loadRules, applyRules, keywordHit, matcherPrompt, classify, classifyWith, freeShadows, offline, pickFrontier, readLimits, run, plan, usageMarkdown, claudeEvent, claudeState, codexEvent, codexState, claudeWindow, codexWindow, askQwen, askHaiku, BackendError };
