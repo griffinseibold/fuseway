@@ -5,7 +5,8 @@
 ## Commands
 - Build: none (Node 22, no dependencies)
 - Test: `node --test test/*.test.mjs` (CLI), `node .agents/fusion/smoke.mjs` (fusion against the real backends; spends a little quota)
-- Lint/format: `node --check bin/loadout.mjs .agents/fusion/*.mjs && bash -n local-llm/bench.sh scripts/bootstrap.sh`
+- Routing accuracy: `node extension/route-eval.mjs` (real Qwen and Haiku; about 10K Claude tokens)
+- Lint/format: `node --check bin/loadout.mjs .agents/fusion/*.mjs extension/*.js && bash -n local-llm/bench.sh scripts/bootstrap.sh`
 - Files under `template/` and `.agents/fusion/` are what `loadout init` installs into other repos: change them with that in mind.
 
 <!-- loadout:begin -->

@@ -4,3 +4,4 @@
 .agents/context/handoff.md
 node_modules/
 .agents/usage.jsonl
+extension/*.vsix

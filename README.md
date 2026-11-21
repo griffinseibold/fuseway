@@ -18,6 +18,12 @@ Once it has a server, it checks that tool calls work, then configures:
 - **Codex:** `codex --profile local` (`~/.codex/local.config.toml`)
 - **VS Code:** the model picker (`chatLanguageModels.json`)
 
+## Chat: `@loadout` in VS Code
+```bash
+loadout extension
+```
+This builds and installs a chat participant that routes each request itself. The local model classifies it for free, and Claude Haiku double-checks anything that looks hard. Frontier work goes to Claude Code or Codex, whichever subscription has more of its 5-hour window left. Each reply says who answered and what it cost. `/local`, `/claude` and `/codex` force a backend, and `/usage` shows both windows. See [extension/README.md](extension/README.md).
+
 ## Add to a repo
 ```bash
 cd my-repo && loadout init          # or: loadout init path/to/repo [--no-pstack]
@@ -33,7 +39,8 @@ Then fill in the **Project** and **Commands** sections of `AGENTS.md`.
 ## What's here
 | Path | Purpose |
 |---|---|
-| `bin/loadout.mjs` | The CLI: `init` and `model` |
+| `bin/loadout.mjs` | The CLI: `init`, `model`, `extension` |
+| `extension/` | The `@loadout` chat participant: `router.js` (routing and backends), `route-eval.mjs` (routing accuracy) |
 | `template/` | What `init` writes: the `AGENTS.md` section and starter files |
 | `.agents/fusion/` | MCP server: `ask_local`, `ask_claude`, `ask_codex`, `critique`. See `.agents/context/fusion.md` |
 | `.agents/skills/` | pstack, committed. `scripts/bootstrap.sh` updates it from upstream |

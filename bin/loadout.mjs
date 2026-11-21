@@ -3,6 +3,7 @@
 //   loadout init [dir] [--no-pstack]     add the setup to a repo (default: current directory); safe to rerun
 //   loadout model [--url URL] [--ctx N]  find, check and configure this machine's local model server
 //   loadout model --recommend [--vram GiB] [--ram GiB]   recommend a model for this (or a hypothetical) machine
+//   loadout extension                    build and install the @loadout VS Code chat participant
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, platform, arch, totalmem } from 'node:os';
@@ -283,6 +284,18 @@ async function model(args) {
   writeVsCodeModel(local);
 }
 
+// ---------- extension ----------
+
+function extension() {
+  const vsix = join(LOADOUT, 'extension', 'loadout.vsix');
+  execFileSync(process.execPath, [join(LOADOUT, 'extension', 'build.mjs'), vsix], { stdio: 'inherit' });
+  const code = which('code') || which('code-insiders');
+  if (!code) return console.log(`VS Code CLI not found. Install ${vsix} with "Extensions: Install from VSIX…".`);
+  execFileSync(code, ['--install-extension', vsix, '--force'], { stdio: ['ignore', 'inherit', 'ignore'] });
+  console.log('Installed. A new install is ready right away; an update loads after "Developer: Reload Window".');
+  if (!existsSync(LOCAL_CONFIG)) console.log('No local model configured yet: run `loadout model` so @loadout can route to it.');
+}
+
 // ---------- main ----------
 
 function parse(argv) {
@@ -297,9 +310,9 @@ function parse(argv) {
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
-const commands = { init, model };
+const commands = { init, model, extension };
 if (!commands[cmd]) {
-  console.log(read(fileURLToPath(import.meta.url)).split('\n').slice(1, 6).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
+  console.log(read(fileURLToPath(import.meta.url)).split('\n').slice(1).filter((l, i, a) => a.slice(0, i + 1).every((x) => x.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
   process.exit(cmd ? 2 : 0);
 }
 try { await commands[cmd](parse(rest)); } catch (e) { console.error(`loadout ${cmd}: ${e.message}`); process.exit(1); }
