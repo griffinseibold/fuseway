@@ -115,12 +115,3 @@ test('the server plan uses the right llama.cpp image and flags for each GPU', as
   assert.ok(!dockerArgs(serverPlan({ gpu: { vendor: 'other', vramGiB: 16 }, ramGiB: 48 })).includes('-ngl'), 'unknown GPUs get no offload flag');
 });
 
-test('a repo set up under the old name (loadout) gets its section replaced, not duplicated', () => {
-  const dir = repo();
-  writeFileSync(join(dir, 'AGENTS.md'), '# Ours\n\n<!-- loadout:begin -->\nold text\n<!-- loadout:end -->\n\nKeep this.\n');
-  fuseway('init', dir, '--skills', 'none');
-  const agents = read(dir, 'AGENTS.md');
-  assert.doesNotMatch(agents, /loadout:begin|old text/);
-  assert.equal(agents.split('<!-- fuseway:begin -->').length, 2);
-  assert.match(agents, /Keep this\./);
-});

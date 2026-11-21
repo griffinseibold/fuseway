@@ -5,11 +5,6 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// Fuseway was called loadout: move this machine's old config and state once, before router and learner read them.
-for (const d of ['.config', path.join('.local', 'state')]) {
-  const from = path.join(os.homedir(), d, 'loadout'), to = path.join(os.homedir(), d, 'fuseway');
-  if (fs.existsSync(from) && !fs.existsSync(to)) { try { fs.renameSync(from, to); } catch {} }
-}
 const r = require('./router');
 const L = require('./learner');
 

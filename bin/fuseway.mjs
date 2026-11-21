@@ -21,11 +21,6 @@ const LOCAL_CONFIG = join(homedir(), '.config', 'fuseway', 'local.json');
 const BEGIN = '<!-- fuseway:begin -->';
 const END = '<!-- fuseway:end -->';
 const MANAGED = '# managed by fuseway: rerun `fuseway model` to update';
-// Fuseway was called loadout. Old markers and files are still recognized, and old config and state move once.
-const LEGACY = { begin: '<!-- loadout:begin -->', end: '<!-- loadout:end -->', managed: '# managed by loadout', group: 'Loadout local' };
-for (const [from, to] of [['.config', 'loadout', 'fuseway'], ['.local/state', 'loadout', 'fuseway']].map(([d, a, b]) => [join(homedir(), d, a), join(homedir(), d, b)])) {
-  if (existsSync(from) && !existsSync(to)) { try { renameSync(from, to); } catch {} }
-}
 
 const read = (p) => readFileSync(p, 'utf8');
 const template = (name) => read(join(FUSEWAY, 'template', name));
@@ -49,10 +44,8 @@ function writeFile(root, rel, content) {
 
 function withBlock(text, block) {
   const wrapped = `${BEGIN}\n${block.trim()}\n${END}`;
-  for (const [b, e] of [[BEGIN, END], [LEGACY.begin, LEGACY.end]]) {
-    const i = text.indexOf(b), j = text.indexOf(e);
-    if (i >= 0 && j > i) return text.slice(0, i) + wrapped + text.slice(j + e.length);
-  }
+  const i = text.indexOf(BEGIN), j = text.indexOf(END);
+  if (i >= 0 && j > i) return text.slice(0, i) + wrapped + text.slice(j + END.length);
   return text.trim() ? `${text.replace(/\s*$/, '')}\n\n${wrapped}\n` : `${wrapped}\n`;
 }
 
@@ -360,7 +353,7 @@ function writeCodexProfile(local) {
   const dir = join(homedir(), '.codex');
   if (!existsSync(dir)) return console.log('  codex      skipped (~/.codex not found)');
   const path = join(dir, 'local.config.toml');
-  if (existsSync(path) && ![MANAGED, LEGACY.managed].some((m) => read(path).includes(m))) return console.log(`  codex      skipped (${path} exists and is not managed by fuseway)`);
+  if (existsSync(path) && !read(path).includes(MANAGED)) return console.log(`  codex      skipped (${path} exists and is not managed by fuseway)`);
   writeFileSync(path, `${MANAGED}\n# Use with: codex --profile local\nmodel_provider = "fuseway-local"\nmodel = ${JSON.stringify(local.model)}\n\n` +
     `[model_providers.fuseway-local]\nname = "Local model (fuseway)"\nbase_url = ${JSON.stringify(local.url)}\nwire_api = "responses"\n`);
   console.log(`  codex      ${path} (codex --profile local)`);
@@ -380,7 +373,7 @@ function writeVsCodeModel(local) {
     const group = { name: 'Fuseway local', vendor: 'customendpoint', apiType: 'chat-completions', models: [{
       id: local.model, name: `${local.model} (local)`, url: local.url, toolCalling: local.toolCalling, vision: false,
       thinking: true, contextWindow: local.contextWindow, maxOutputTokens: local.maxOutputTokens }] };
-    writeFileSync(path, JSON.stringify([...groups.filter((g) => g.name !== 'Fuseway local' && g.name !== LEGACY.group), group], null, 2) + '\n');
+    writeFileSync(path, JSON.stringify([...groups.filter((g) => g.name !== 'Fuseway local'), group], null, 2) + '\n');
     console.log(`  vscode     ${path} (model picker: ${group.models[0].name})`);
   }
 }
