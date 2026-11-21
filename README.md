@@ -18,6 +18,7 @@ Then fill in the **Project** and **Commands** sections of `AGENTS.md`.
 | `AGENTS.md` | The one instruction file. `CLAUDE.md` imports it, and Copilot and Codex read it directly |
 | `.agents/context/` | Local knowledge cache, so agents read it before exploring |
 | `.agents/skills/` | pstack (installed by bootstrap, committed). Codex reads it directly, and it's symlinked into `.claude/` and `.github/` |
+| `fusion/` | MCP server: `ask_local`, `ask_claude`, `ask_codex`, `critique`, so one chat can use every model. See `.agents/context/fusion.md` |
 | `.vscode/` | Settings, the local model in Copilot's picker, and recommended extensions |
 | `local-llm/` | llama.cpp server (Vulkan) for the RX 6800 |
 | `config/codex.local.toml` | Codex profile that uses the local model |

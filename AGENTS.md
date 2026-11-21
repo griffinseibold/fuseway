@@ -23,6 +23,7 @@
 | Updating `.agents/context/`, tests, docs, boilerplate, mechanical refactors, log triage, first drafts | Local model (Qwen via llama.cpp) |
 | Planning, architecture, hard bugs, reviewing local-model output | Claude Code or Codex |
 
+- From a chat, hand work across with the `fusion` MCP tools: `ask_local` first, `ask_claude` or `ask_codex` to escalate, `critique` only at checkpoints (a finished plan or final diff).
 - Use default reasoning effort. Use high effort only for planning and hard bugs.
 - A local-model agent that is stuck after two attempts stops and writes up what it tried in `.agents/context/handoff.md` for a frontier agent.
 

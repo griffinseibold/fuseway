@@ -1,0 +1,10 @@
+{
+  // fusion: hands work to the local model, Claude Code and Codex. See .agents/context/fusion.md.
+  "servers": {
+    "fusion": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/fusion/server.mjs"]
+    }
+  }
+}

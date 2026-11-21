@@ -6,4 +6,4 @@ Rules: one topic per file, short, concepts over line numbers, and update it in t
 
 | File | What it covers |
 |---|---|
-| _add entries as you go_ | |
+| [fusion.md](fusion.md) | The MCP server that hands chat work to the local model, Claude Code and Codex, and logs usage |
