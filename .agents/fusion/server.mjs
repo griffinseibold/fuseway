@@ -1,19 +1,23 @@
 #!/usr/bin/env node
 // fusion: an MCP server (stdio) that lets one chat hand work to other models
 // through their official CLIs, so each call spends that tool's subscription quota.
-//   node fusion/server.mjs          serve MCP on stdin/stdout
-//   node fusion/server.mjs report   summarize the usage log
+//   node .agents/fusion/server.mjs          serve MCP on stdin/stdout
+//   node .agents/fusion/server.mjs report   summarize the usage log
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
+import { homedir } from 'node:os';
 
-const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+// This file lives at <repo>/.agents/fusion/server.mjs.
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKSPACE = process.env.FUSION_WORKSPACE || REPO;
 const LOG = process.env.FUSION_LOG || join(REPO, '.agents', 'usage.jsonl');
 const TIMEOUT_MS = Number(process.env.FUSION_TIMEOUT_MS || 600_000);
-const LOCAL_URL = (process.env.LOCAL_LLM_URL || 'http://llm.localhost:8080/v1').replace(/\/$/, '');
+// `loadout model` records this machine's local model server; LOCAL_LLM_URL overrides it.
+const LOCAL = (() => { try { return JSON.parse(readFileSync(join(homedir(), '.config', 'loadout', 'local.json'), 'utf8')); } catch { return {}; } })();
+const LOCAL_URL = (process.env.LOCAL_LLM_URL || LOCAL.url || 'http://localhost:8080/v1').replace(/\/$/, '');
 const CHILD_ENV = { ...process.env, FUSION_CHILD: '1' };
 
 function which(name, fallbacks = []) {
@@ -86,10 +90,10 @@ const BACKENDS = {
     try {
       res = await fetch(`${LOCAL_URL}/chat/completions`, {
         method: 'POST', signal: ctl, headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model: process.env.LOCAL_LLM_MODEL || 'local', messages, stream: false }),
+        body: JSON.stringify({ model: process.env.LOCAL_LLM_MODEL || LOCAL.model || 'local', messages, stream: false }),
       });
     } catch (e) {
-      throw new Error(`local model unreachable at ${LOCAL_URL} (${e.cause?.code || e.message}). Is llama-server running?`);
+      throw new Error(`local model unreachable at ${LOCAL_URL} (${e.cause?.code || e.message}). Is it running? Run \`loadout model\` to find or set up one.`);
     }
     if (!res.ok) throw new Error(`local model HTTP ${res.status}: ${(await res.text()).slice(0, 1000)}`);
     const r = await res.json();
@@ -155,7 +159,7 @@ const TOOLS = [
     description: 'Spends both Claude and ChatGPT quota. Claude and Codex review the same plan or change in parallel, read-only, and both reviews come back for you to merge. ' +
       'Use at checkpoints only: a finished plan or a final diff, not every turn.',
     inputSchema: { type: 'object', required: ['subject'], properties: {
-      subject: { type: 'string', description: 'What to review: the plan text, or which files/diff to look at (e.g. "the uncommitted diff" or "fusion/server.mjs").' } } },
+      subject: { type: 'string', description: 'What to review: the plan text, or which files/diff to look at (e.g. "the uncommitted diff" or "src/app.ts").' } } },
     handler: async ({ subject }) => {
       const prompt = CRITIQUE_FRAME + subject;
       const [c, x] = await Promise.allSettled([call('claude', { prompt }), call('codex', { prompt })]);

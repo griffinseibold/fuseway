@@ -1,0 +1,56 @@
+{
+  "_comment": "Local model per hardware tier, best first. loadout model --recommend picks the first tier the machine meets. vramGiB is usable GPU memory (on Apple Silicon, about 65% of unified memory). Only entries with 'measured' were benchmarked; the rest are estimates. Rerun local-llm/bench.sh and update this file when you measure a tier.",
+  "llamaCppBuild": "b10731",
+  "tiers": [
+    {
+      "minVramGiB": 20,
+      "model": "Qwen3.6-35B-A3B",
+      "alias": "qwen3.6-35b-a3b",
+      "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+      "url": "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+      "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3",
+      "sizeGB": 17.7,
+      "ctx": 65536,
+      "args": [],
+      "note": "Higher-precision quant of the 16 GB pick. For more precision at a third of the speed, the dense Qwen3.8-27B UD-Q4_K_M (16.6 GB) also fits."
+    },
+    {
+      "minVramGiB": 14,
+      "model": "Qwen3.6-35B-A3B",
+      "alias": "qwen3.6-35b-a3b",
+      "file": "Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf",
+      "url": "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf",
+      "sha256": "9c964e657212fea1f24905dd7b0a89b82fd807d19fab0b41da14251b07b88fbe",
+      "sizeGB": 13.2,
+      "ctx": 65536,
+      "args": [],
+      "measured": "RX 6800 16 GB, Vulkan: 775 t/s prompt at 32K, 101 t/s generation, 13.3 GB VRAM at 64K context, tool calls 3/3",
+      "note": "Mixture of experts with 3B active parameters: 3.5x faster per agent turn than the dense 27B, slightly less precise."
+    },
+    {
+      "minVramGiB": 10,
+      "minRamGiB": 32,
+      "model": "Qwen3.6-35B-A3B",
+      "alias": "qwen3.6-35b-a3b",
+      "file": "Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf",
+      "url": "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf",
+      "sha256": "9c964e657212fea1f24905dd7b0a89b82fd807d19fab0b41da14251b07b88fbe",
+      "sizeGB": 13.2,
+      "ctx": 32768,
+      "args": ["--n-cpu-moe", "12"],
+      "note": "Some experts stay in system RAM. Tune --n-cpu-moe down until it no longer fits, then back up one."
+    },
+    {
+      "minVramGiB": 6,
+      "model": "Qwen3-8B",
+      "alias": "qwen3-8b",
+      "file": "Qwen3-8B-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
+      "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+      "sizeGB": 5.0,
+      "ctx": 32768,
+      "args": [],
+      "note": "Good for ask_local drafts and summaries; too weak to run a Copilot agent-mode chat. Keep a frontier model as the chat."
+    }
+  ]
+}

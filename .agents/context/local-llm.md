@@ -22,9 +22,10 @@ It runs on demand. In the homelab repo:
 The server has no API key and is bound to host loopback.
 
 ## Clients
-- **Copilot Chat:** custom models are per user, not in `.vscode/settings.json`. *Chat: Manage Language Models* → add **Custom Endpoint**: API key any non-empty string (e.g. `homelab-local`; the server ignores it), model id `qwen3.6-35b-a3b`, URL `http://llm.localhost:8080/v1`, API type Chat Completions, tool calling on, vision off, thinking on, context window `65536`, max output `8192`.
-- **Codex:** `config/codex.local.toml` (Responses API, `wire_api = "responses"`). llama-server serves one model and ignores the requested name.
-- **fusion `ask_local`:** `LOCAL_LLM_URL`, default above.
+`loadout model` writes all of these from one check of the server (it read the 64K context from llama-server's `/props` and confirmed tool calls). Rerun it after changing the model.
+- **Copilot Chat:** custom models are per user, in `~/.config/Code/User/chatLanguageModels.json`, as a **Custom Endpoint** group named *Loadout local*. The group's `apiKey` is optional; VS Code only accepts it as a reference into its secret store, so a plain-text key in the file reads as missing. If the picker asks for a key, type anything in *Chat: Manage Language Models*.
+- **Codex:** `~/.codex/local.config.toml`, used with `codex --profile local`. Codex 0.167 reads each profile from its own `<name>.config.toml` and refuses a `[profiles.x]` table in `config.toml`. Responses API (`wire_api = "responses"`).
+- **fusion `ask_local`:** `~/.config/loadout/local.json`; `LOCAL_LLM_URL` overrides it.
 
 ## Gotchas
 - Without `--jinja` llama-server makes no tool calls; homelab's deployment had it missing until the MoE switch.

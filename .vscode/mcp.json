@@ -4,7 +4,7 @@
     "fusion": {
       "type": "stdio",
       "command": "node",
-      "args": ["${workspaceFolder}/fusion/server.mjs"]
+      "args": ["${workspaceFolder}/.agents/fusion/server.mjs"]
     }
   }
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Drives fusion/server.mjs over stdio like an MCP client and checks each tool's real reply.
-//   node fusion/smoke.mjs                    all backends (spends a little quota)
-//   node fusion/smoke.mjs ask_local          just the named tools
+// Drives .agents/fusion/server.mjs over stdio like an MCP client and checks each tool's real reply.
+//   node .agents/fusion/smoke.mjs                    all backends (spends a little quota)
+//   node .agents/fusion/smoke.mjs ask_local          just the named tools
 // Usage from the smoke test goes to a scratch log, not .agents/usage.jsonl.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
