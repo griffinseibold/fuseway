@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Packages this folder as a VSIX (a zip with two manifest files) without vsce or other dependencies.
 //   node extension/build.mjs [out.vsix]     default: extension/fuseway.vsix
+import { execFileSync } from 'node:child_process';
 import { crc32 } from 'node:zlib';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
@@ -10,10 +11,10 @@ const DIR = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(DIR, 'package.json'), 'utf8'));
 const out = process.argv[2] || join(DIR, `${pkg.name}.vsix`);
 const REPO = join(DIR, '..');
-const SHIP = ['package.json', 'extension.js', 'router.js', 'rules.json', 'learner.js', 'route-cases.json', 'README.md'];
+const SHIP = ['package.json', 'extension.js', 'router.js', 'rules.json', 'skills.json', 'learner.js', 'route-cases.json', 'README.md'];
 // The fuseway CLI and everything `fuseway init` installs, at the same paths as in the repo, so the bundled CLI
 // finds them next to itself.
-const BUNDLE = ['LICENSE', 'bin/fuseway.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',
+const BUNDLE = ['company', 'LICENSE', 'bin/fuseway.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',
   '.agents/tasks/refresh-context.md', '.agents/skills', 'local-llm/models.json', 'local-llm/bench.sh'];
 const walk = (rel) => (statSync(join(REPO, rel)).isDirectory()
   ? readdirSync(join(REPO, rel)).flatMap((f) => walk(join(rel, f))) : [rel.split(sep).join('/')]);
@@ -31,7 +32,11 @@ const manifest = `<?xml version="1.0" encoding="utf-8"?>
   <Assets><Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" /></Assets>
 </PackageManifest>
 `;
+const git = (...args) => { try { return execFileSync('git', args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
+const dirty = git('status', '--porcelain');
+const buildInfo = { version: pkg.version, commit: process.env.FUSEWAY_BUILD_COMMIT || git('rev-parse', 'HEAD'), dirty: dirty === null ? null : !!dirty };
 const payload = [
+  ['extension/build-info.json', Buffer.from(JSON.stringify(buildInfo))],
   ...SHIP.filter((f) => { try { return statSync(join(DIR, f)).isFile(); } catch { return false; } })
     .map((f) => [`extension/${f}`, readFileSync(join(DIR, f))]),
   ...BUNDLE.flatMap(walk).map((f) => [`extension/${f}`, readFileSync(join(REPO, f))])];

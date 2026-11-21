@@ -64,18 +64,16 @@ const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).sli
 
 const FAILURE = /(didn'?t|doesn'?t|does not|did not) work|not working|still (fail|broken|wrong|not)|is wrong|\bwrong\b|\bbroke|got an? (error|exception)|traceback|stack trace|tests? (fail|still)|that's not|try again/i;
 
-// What the next message in the same chat says about the previous answer: 'fail', 'success' or null (no signal).
+// What an explicit success or failure phrase says about the previous answer: 'fail', 'success' or null (no signal).
 function outcomeFromNextTurn(prevMeta, nextPrompt, nextCommand) {
   if (!prevMeta?.decisionId && !prevMeta?.attempt) return null;
-  if (['local', 'claude', 'codex'].includes(nextCommand) && nextCommand !== prevMeta.backend) return 'fail'; // asked someone else
   if (FAILURE.test(nextPrompt || '')) return 'fail';
-  return 'success'; // moved on without complaint
+  return /^(?:thanks[,! ]+)?(?:that worked|it works|that fixed it|works now|tests? pass(?:ed)?|looks good)[.! ]*$/i.test((nextPrompt || '').trim()) ? 'success' : null;
 }
 
 // The right tier, when an outcome shows it. Only local answers show it: a local success means local was enough,
 // a local failure means frontier was needed. A frontier success says nothing about whether local would have done.
 function labelFor(decision, outcome) {
-  if (decision.escalated) return 'frontier';
   if (!decision.local) return null;
   return outcome === 'success' ? 'local' : outcome === 'fail' ? 'frontier' : null;
 }
@@ -92,7 +90,7 @@ function decisions(events) {
     const d = byId.get(e.id);
     if (!d) continue;
     if (e.type === 'router') { d.routers[e.key] = e.tier; d.cost[e.key] = { tokens: e.tokens || 0, ms: e.ms || 0 }; }
-    if (e.type === 'outcome' && (e.explicit || !d.explicit)) { d.outcome = e.outcome; d.explicit = !!e.explicit; d.resolvedTs = e.ts; }
+    if (e.type === 'outcome' && !(e.reason === 'next message' && e.outcome === 'success' && !e.verifiedSignal && !e.explicit) && (e.explicit || !d.explicit)) { d.outcome = e.outcome; d.explicit = !!e.explicit; d.resolvedTs = e.ts; }
     if (e.type === 'label') d.label = e.label;
     if (e.type === 'escalated') d.escalated = true;
   }
@@ -132,25 +130,27 @@ function routerScores(events, now = Date.now()) {
 
 // Per agent (backend:model:effort): recency-weighted success rate, tokens, time and share of the 5-hour window.
 function agentScores(events, now = Date.now()) {
-  // One result per attempt: explicit feedback replaces the implicit "moved on" outcome instead of adding to it.
   const attempts = new Map();
   for (const e of events) {
-    if (e.type !== 'agent' || !e.outcome) continue;
+    if (e.type !== 'agent') continue;
     const k = e.attempt || `${e.ts}-${Math.random()}`;
-    if (!attempts.has(k) || e.explicit || !attempts.get(k).explicit) attempts.set(k, e);
+    const prev = attempts.get(k);
+    if (!prev || e.explicit || !prev.explicit) attempts.set(k, { ...prev, ...e });
   }
   const s = {};
   for (const e of attempts.values()) {
-    const r = (s[e.agent] ||= { agent: e.agent, w: 0, ok: 0, tokens: 0, ms: 0, quota: 0, n: 0 });
+    const r = (s[e.agent] ||= { agent: e.agent, w: 0, judgedW: 0, ok: 0, tokens: 0, ms: 0, quota: 0, n: 0, judged: 0, usageIncomplete: false });
     const w = weight(e.ts, now);
-    r.w += w; r.ok += w * (e.outcome === 'success' ? 1 : 0); r.n++;
+    const judged = e.outcome && !e.infrastructure && (e.outcome !== 'success' || e.explicit || e.verifiedSignal);
+    r.w += w; r.n++; r.usageIncomplete ||= !!e.usageIncomplete || e.in === undefined || e.out === undefined;
+    if (judged) { r.judgedW += w; r.judged++; r.ok += w * (e.outcome === 'success' ? 1 : 0); }
     r.tokens += w * ((e.in || 0) + (e.out || 0)); r.ms += w * (e.ms || 0); r.quota += w * (e.quota || 0);
   }
   for (const r of Object.values(s)) {
-    r.success = r.w ? r.ok / r.w : null;
-    r.tokensPerCall = r.w ? r.tokens / r.w : 0;
-    r.secondsPerCall = r.w ? r.ms / r.w / 1000 : 0;
-    r.quotaPerCall = r.w ? r.quota / r.w : 0;
+    r.success = r.judgedW ? r.ok / r.judgedW : null;
+    r.tokensPerCall = r.tokens / r.w;
+    r.secondsPerCall = r.ms / r.w / 1000;
+    r.quotaPerCall = r.quota / r.w;
   }
   return s;
 }
@@ -187,6 +187,18 @@ function paidToday(events, now = Date.now()) {
     .reduce((sum, e) => sum + (e.tokens || 0), 0);
 }
 
+
+function taskScores(events) {
+  const rows = {};
+  for (const e of events) {
+    if (e.type !== 'task') continue;
+    const r = (rows[e.router || 'forced'] ||= { n: 0, attempts: 0, escalations: 0, ms: 0, paidTokens: 0, localTokens: 0, quota: 0 });
+    r.n++; r.attempts += e.attempts?.length || 0; r.escalations += e.escalated ? 1 : 0;
+    r.ms += e.ms || 0; r.paidTokens += e.paidTokens || 0; r.localTokens += e.localTokens || 0; r.quota += e.quota || 0;
+  }
+  return rows;
+}
+
 // ---------- reports ----------
 
 function statsMarkdown(events, localModel, now = Date.now()) {
@@ -205,47 +217,50 @@ function statsMarkdown(events, localModel, now = Date.now()) {
     '', `Weighted by age (half-life ${POLICY.halfLifeDays} days). A challenger needs ${POLICY.minEvidence} recent results and a ${POLICY.margin * 100}-point lead to take over.`, '',
     '| Router | Score | Accuracy | Recent evidence | Paid tokens / decision | s / decision |', '|---|---|---|---|---|---|',
     ...rs.map((r) => `| ${r.key === cur.key ? '**' + r.key + '**' : r.key} | ${r.score === null ? '–' : (r.score * 100).toFixed(1)} | ${pct(r.accuracy)} | ${r.evidence.toFixed(1)} | ${Math.round(r.tokensPerDecision)} | ${r.secondsPerDecision.toFixed(1)} |`),
-    '', '| Agent | Success | Calls | Tokens / call | s / call | 5h window / call |', '|---|---|---|---|---|---|',
-    ...as.map((a) => `| ${a.agent} | ${pct(a.success)} | ${a.n} | ${Math.round(a.tokensPerCall)} | ${a.secondsPerCall.toFixed(1)} | ${a.quotaPerCall ? (a.quotaPerCall * 100).toFixed(1) + '%' : '–'} |`),
+    '', '| Agent | Success | Calls | Judged | Tokens / call | s / call | 5h window / call |', '|---|---|---|---|---|---|---|',
+    ...as.map((a) => `| ${a.agent} | ${pct(a.success)} | ${a.n} | ${a.judged} | ${Math.round(a.tokensPerCall)}${a.usageIncomplete ? ' + unknown' : ''} | ${a.secondsPerCall.toFixed(1)} | ${a.quotaPerCall ? (a.quotaPerCall * 100).toFixed(1) + '%' : '–'} |`),
+    '', 'Observed task costs include routing and retries. Token totals include reported usage only; calls may report incomplete usage. Shadow routers have no observed task cost.', '',
+    '| Router | Tasks | Attempts / task | Escalations | Paid tokens / task | Local tokens / task | Seconds / task |',
+    '|---|---|---|---|---|---|---|',
+    ...Object.entries(taskScores(events)).map(([key, t]) => `| ${key} | ${t.n} | ${(t.attempts / t.n).toFixed(1)} | ${t.escalations} | ${Math.round(t.paidTokens / t.n)} | ${Math.round(t.localTokens / t.n)} | ${(t.ms / t.n / 1000).toFixed(1)} |`),
   ].join('\n');
 }
 
-// Labeled prompts for scoring a thin candidate: this machine's own resolved decisions first (so it improves with
-// use), then the shipped cases.
-function benchCases(events) {
+// Shipped labeled cases; real decisions are replayed with their saved context.
+function benchCases() {
   const builtIn = (() => { try { const c = JSON.parse(fs.readFileSync(path.join(__dirname, 'route-cases.json'), 'utf8')); return [...c.fresh, ...c.heldOut, ...c.seen]; } catch { return []; } })();
-  const real = decisions(events).filter((d) => d.label && d.prompt).reverse().map((d) => [d.prompt, d.label]);
   const seen = new Set();
-  return [...real, ...builtIn].filter(([p]) => !seen.has(p) && seen.add(p));
+  return builtIn.filter(([p]) => !seen.has(p) && seen.add(p));
 }
 
 // One quiet background pass. 1: fill in missing router answers on the last two days of decisions. 2: give
 // candidates without enough recent evidence labeled cases. Free routers always run; paid ones only within the
 // daily budget. Stops when a request comes in, when the local model is down, or after maxJobs.
-async function tick({ classifyWith, offline, localModel, budget, ctx = (prompt) => ({ prompt }), isBusy = () => false, now = Date.now(), maxJobs = 6 }) {
+async function tick({ classifyWith, offline, localModel, budget, ctx = (prompt) => ({ prompt }), isBusy = () => false, now = Date.now(), maxJobs = 6, signal }) {
   const events = load(now);
   let spent = paidToday(events, now), jobs = 0;
   const go = async (name) => {
-    if (jobs >= maxJobs || isBusy()) return false;
+    if (jobs >= maxJobs || isBusy() || signal?.aborted) return false;
     if (ROUTERS[name].paid && spent >= budget) return null;
     return true;
   };
-  const run = async (name, prompt) => {
-    const out = await classifyWith(name, ctx(prompt));
+  const run = async (name, input) => {
+    const out = await classifyWith(name, { ...input, signal });
+    signal?.throwIfAborted();
     jobs++;
     if (offline(out)) throw new Error('local model offline');
     spent += out.paidTokens || 0;
     return out;
   };
   try {
-    for (const d of decisions(events).filter((x) => now - x.ts < 2 * DAY && x.prompt).reverse()) {
+    for (const d of decisions(events).filter((x) => now - x.ts < 2 * DAY && x.context && x.localModel === localModel).reverse()) {
       for (const name of Object.keys(ROUTERS)) {
         const key = routerKey(name, localModel);
         if (d.routers[key] !== undefined) continue;
         const ok = await go(name);
         if (ok === false) return;
         if (!ok) continue;
-        const out = await run(name, d.prompt);
+        const out = await run(name, d.context);
         append({ type: 'router', id: d.id, key, tier: out.tier, tokens: out.paidTokens, ms: out.ms, background: true });
       }
     }
@@ -259,12 +274,12 @@ async function tick({ classifyWith, offline, localModel, budget, ctx = (prompt) 
         const ok = await go(name);
         if (ok === false) return;
         if (!ok) break;
-        const out = await run(name, prompt);
+        const out = await run(name, ctx(prompt));
         append({ type: 'bench', key, prompt, want, tier: out.tier, tokens: out.paidTokens, ms: out.ms, background: true });
       }
     }
   } catch (e) {
-    if (e.message !== 'local model offline') throw e;
+    if (!signal?.aborted && e.message !== 'local model offline') throw e;
   }
 }
 
@@ -278,5 +293,5 @@ function reconsider(localModel, now = Date.now()) {
   return pick;
 }
 
-module.exports = { tick, reconsider, benchCases, POLICY, ROUTERS, LOG, routerKey, routerName, append, load, newId, outcomeFromNextTurn, labelFor, decisions,
+module.exports = { taskScores, tick, reconsider, benchCases, POLICY, ROUTERS, LOG, routerKey, routerName, append, load, newId, outcomeFromNextTurn, labelFor, decisions,
   routerScores, agentScores, currentRouter, choose, paidToday, statsMarkdown, weight };

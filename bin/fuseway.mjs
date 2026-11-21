@@ -6,6 +6,7 @@
 //   fuseway model --install [--yes] [--dry-run]           use a running server, or download and start the recommended one
 //   fuseway extension                    build and install the @fuseway VS Code chat participant
 //   fuseway setup                        one-time machine setup: PATH, local model, extension, then doctor
+//   fuseway company init|status|run <mission.json>|challenge <mission.json>|stop <run-id>
 //   fuseway doctor [--json]              check the CLIs, their sign-ins and the local model
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -121,6 +122,10 @@ function init(args) {
         writeFileSync(join(root, '.agents/skills', stamp), version);
         cpSync(join(tmp, 'LICENSE'), join(root, '.agents/skills/SUPERPOWERS_LICENSE'));
         rmSync(tmp, { recursive: true, force: true });
+        // The third-party skills fuseway routes to (scripts/vendor-skills.mjs) go with either skill set.
+        const vendored = join(FUSEWAY, '.agents/skills/VENDORED.json');
+        for (const name of existsSync(vendored) ? Object.keys(JSON.parse(read(vendored))) : [])
+          cpSync(join(FUSEWAY, '.agents/skills', name), join(root, '.agents/skills', name), { recursive: true });
       }
       report(`.agents/skills/ (${skills})`, before === null ? 'created' : before === version ? 'unchanged' : 'updated');
     }
@@ -527,7 +532,23 @@ function parse(argv) {
 // Run only as a command, not when imported (tests import download). argv[1] may be a symlink in ~/.local/bin.
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const [cmd, ...rest] = process.argv.slice(2);
-  const commands = { init, model, extension, setup, doctor };
+  const company = async args => {
+    const { command } = await import('../company/cli.mjs');
+    const controller = new AbortController();
+    const interrupt = () => controller.abort(new Error('Company cancelled by SIGINT'));
+    const terminate = () => controller.abort(new Error('Company cancelled by SIGTERM'));
+    process.once('SIGINT', interrupt);
+    process.once('SIGTERM', terminate);
+    try {
+      const output = await command(process.cwd(), args.positional[0], args.positional[1], { signal: controller.signal, onProgress: message => console.error(message) });
+      console.log(output);
+      if (['run','challenge'].includes(args.positional[0]) && JSON.parse(output).status !== 'completed') process.exitCode = controller.signal.aborted ? 130 : 1;
+    } finally {
+      process.removeListener('SIGINT', interrupt);
+      process.removeListener('SIGTERM', terminate);
+    }
+  };
+  const commands = { init, model, extension, setup, doctor, company };
   if (!commands[cmd]) {
     console.log(read(fileURLToPath(import.meta.url)).split('\n').slice(1).filter((l, i, a) => a.slice(0, i + 1).every((x) => x.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
     process.exit(cmd ? 2 : 0);

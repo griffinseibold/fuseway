@@ -2,8 +2,8 @@
   "name": "fuseway",
   "publisher": "griffinseibold",
   "displayName": "Fuseway",
-  "description": "@fuseway chat participant: routes each request to the local model, Claude Code or Codex, and spends subscription quota only when needed.",
-  "version": "0.3.0",
+  "description": "@fuseway chat participant: routes requests to a local model, Claude Code, Codex, or an explicitly selected Grok Build CLI.",
+  "version": "0.4.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.100.0"
@@ -18,7 +18,7 @@
         "id": "fuseway.router",
         "name": "fuseway",
         "fullName": "Fuseway",
-        "description": "Picks the local model, Claude or Codex for each request",
+        "description": "Picks the local model, Claude or Codex; Grok is available on request",
         "isSticky": true,
         "commands": [
           {
@@ -34,12 +34,28 @@
             "description": "Use Codex (ChatGPT subscription)"
           },
           {
+            "name": "grok",
+            "description": "Use the official Grok Build CLI and its configured authentication"
+          },
+          {
             "name": "usage",
             "description": "Show subscription windows and fuseway's recent calls"
           },
           {
             "name": "stats",
             "description": "How the routers and agents are scoring, and who decides now"
+          },
+          {
+            "name": "version",
+            "description": "Show the installed Fuseway build and workspace Git state without an agent"
+          },
+          {
+            "name": "status",
+            "description": "Show Fuseway setup, model and subscription status without an agent"
+          },
+          {
+            "name": "company",
+            "description": "Run an owner-configured agent company: init, status, run, challenge, stop"
           }
         ]
       }
@@ -77,10 +93,11 @@
           "enum": [
             "balance",
             "claude",
-            "codex"
+            "codex",
+            "grok"
           ],
           "default": "balance",
-          "description": "balance: send frontier work to whichever subscription has more room left after its reserve, counting both its 5-hour and weekly windows."
+          "description": "balance: send frontier work to whichever subscription has more room left after its reserve, counting both its 5-hour and weekly windows. grok explicitly selects Grok Build; its quota is not part of automatic balancing."
         },
         "fuseway.claudeReserve": {
           "type": "number",
@@ -106,6 +123,16 @@
           "default": 20000,
           "minimum": 0,
           "description": "Most Claude tokens per day the background learner may spend testing paid routers (about 1K per Haiku check). 0 tests only free ones."
+        },
+        "fuseway.codexModel": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Codex model ID. Empty uses the Codex CLI default. Replies report the observed model, or unknown if unavailable."
+        },
+        "fuseway.grokModel": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Grok model ID. Empty uses the Grok Build CLI default. Replies report observed model IDs. Use grok models to list models."
         }
       }
     },

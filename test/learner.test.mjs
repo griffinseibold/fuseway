@@ -65,13 +65,13 @@ test('a router tied to a replaced local model hands over to the best available o
 test('outcomes come from the next message, and only local answers produce labels', () => {
   const prev = { decisionId: 'd1', backend: 'local' };
   assert.equal(L.outcomeFromNextTurn(prev, "that didn't work", undefined), 'fail');
-  assert.equal(L.outcomeFromNextTurn(prev, 'do the same for the other file', 'claude'), 'fail', 'asking another backend means the answer fell short');
-  assert.equal(L.outcomeFromNextTurn(prev, 'now add a test for it', undefined), 'success');
+  assert.equal(L.outcomeFromNextTurn(prev, 'do the same for the other file', 'claude'), null, 'asking another backend can be a deliberate comparison');
+  assert.equal(L.outcomeFromNextTurn(prev, 'now add a test for it', undefined), null);
   assert.equal(L.outcomeFromNextTurn({ backend: 'local' }, 'x', undefined), null, 'no decision, no outcome');
   assert.equal(L.labelFor({ local: true }, 'success'), 'local');
   assert.equal(L.labelFor({ local: true }, 'fail'), 'frontier');
   assert.equal(L.labelFor({ local: false }, 'success'), null, 'a frontier success does not show local would have failed');
-  assert.equal(L.labelFor({ local: true, escalated: true }, undefined), 'frontier');
+  assert.equal(L.labelFor({ local: true, escalated: true }, undefined), null);
 });
 
 test('explicit feedback overrides the implicit outcome, for decisions and agents', () => {
@@ -95,9 +95,9 @@ test('labeled test cases count at half weight, and the learner tracks what it sp
   assert.equal(L.paidToday(bench, NOW), 1000, 'only the last 24 hours');
 });
 
-test('one cascade run reveals local-only and, when it asked Haiku, Haiku', () => {
+test('cascade reveals local-only but its hinted Haiku answer is not an independent shadow', () => {
   assert.deepEqual(R.freeShadows('cascade', { tier: 'local', trail: ['rule ≈ regex (strong)'] }), { 'local-only': 'local' });
-  assert.deepEqual(R.freeShadows('cascade', { tier: 'local', trail: ['rule ≈ caching (weak)', 'Haiku: LOCAL'] }), { 'local-only': 'frontier', haiku: 'local' });
+  assert.deepEqual(R.freeShadows('cascade', { tier: 'local', trail: ['rule ≈ caching (weak)', 'Haiku: LOCAL'] }), { 'local-only': 'frontier' });
   assert.deepEqual(R.freeShadows('cascade', { tier: 'frontier', structural: true, trail: ['rule: 3 files attached'] }), {});
 });
 
@@ -115,7 +115,7 @@ test('classifyWith runs each candidate and counts its paid tokens', async () => 
 test('the background pass runs free routers always, paid ones within the budget, and stops when asked', async () => {
   rmSync(process.env.FUSEWAY_LEARNING_LOG, { force: true });
   const now = Date.now();
-  L.append({ type: 'decision', id: 'd1', ts: now - 60_000, prompt: 'add a docstring', local: true, routers: { 'cascade@q': 'local' } });
+  L.append({ type: 'decision', id: 'd1', ts: now - 60_000, prompt: 'add a docstring', context: R.routingSnapshot({ prompt: 'add a docstring' }), localModel: 'q', local: true, routers: { 'cascade@q': 'local' } });
   const calls = [];
   const classifyWith = async (name) => { calls.push(name); return { tier: 'local', trail: [], paidTokens: name === 'local-only' ? 0 : 1000, ms: 5 }; };
   await L.tick({ classifyWith, offline: () => false, localModel: 'q', budget: 1500, now, maxJobs: 50 });

@@ -94,7 +94,7 @@ test('size, file count and repo paths escalate deterministically', () => {
 
 test('conversation rules: follow-ups stick, repeated local failures escalate', () => {
   const after = (backend) => [{ user: 'x', meta: { backend } }];
-  assert.deepEqual(r.applyRules({ prompt: 'make it shorter', turns: after('claude') }), { tier: 'same', backend: 'claude', structural: true, trail: ['rule: short follow-up stays with Claude'] });
+  assert.deepEqual(r.applyRules({ prompt: 'make it shorter', turns: after('claude') }), { tier: 'same', backend: 'claude', structural: true, trail: ['rule: follow-up stays with Claude'] });
   assert.equal(r.applyRules({ prompt: 'make it shorter', turns: after('local') }), null);
   const twoLocal = [...after('local'), ...after('local')];
   assert.match(r.applyRules({ prompt: "that didn't work, the tests still fail", turns: twoLocal }).trail[0], /tried 2 times/);
