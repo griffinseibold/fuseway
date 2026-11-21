@@ -1,0 +1,929 @@
+{
+  "_comment": "Routing rules for @loadout. frontier: needs Claude or Codex. local: the local model can do it. Keywords match whole words; one ending in * is a stem (\"migrat*\" matches \"migration\"); only frontier keywords decide without a model, so keep them to words that nearly always mean risk (a topic word like \"backup\" is not one). Every rule's description is also shown to the local model, which reports which rules a request is related to, even loosely. A repo adds rules or disables these in .agents/routing.json.",
+  "rules": [
+    {
+      "id": "authentication",
+      "route": "frontier",
+      "description": "Sign-in, sign-up, SSO or OAuth, sessions, tokens, MFA",
+      "keywords": [
+        "authenticat*",
+        "oauth",
+        "login*",
+        "sso",
+        "single sign-on",
+        "mfa",
+        "2fa"
+      ],
+      "example": "let users sign in with their Google account"
+    },
+    {
+      "id": "authorization",
+      "route": "frontier",
+      "description": "Access control: roles, permissions, who can see or change what, tenant isolation",
+      "keywords": [
+        "authoriz*",
+        "permission*",
+        "rbac",
+        "access control"
+      ],
+      "example": "can someone read another user's invoice by changing the id in the URL?"
+    },
+    {
+      "id": "secrets",
+      "route": "frontier",
+      "description": "Secrets and credentials: API keys, passwords, tokens, .env values, key rotation",
+      "keywords": [
+        "password*",
+        "secret*",
+        "credential*",
+        "api key",
+        "access token"
+      ],
+      "example": "rotate the Stripe key without downtime"
+    },
+    {
+      "id": "cryptography",
+      "route": "frontier",
+      "description": "Hashing, encryption, signing, secure random values, certificates, TLS",
+      "keywords": [
+        "encrypt*",
+        "crypto*",
+        "certificate*",
+        "tls",
+        "signature verif"
+      ],
+      "example": "store these tokens so a database dump doesn't leak them"
+    },
+    {
+      "id": "untrusted-input",
+      "route": "frontier",
+      "description": "Untrusted input reaching queries, shells, HTML or file paths: injection, XSS, path traversal, deserialization",
+      "keywords": [
+        "injection",
+        "xss",
+        "csrf",
+        "sanitiz*",
+        "path traversal"
+      ],
+      "example": "the search box puts user text straight into the SQL"
+    },
+    {
+      "id": "security-review",
+      "route": "frontier",
+      "description": "Vulnerabilities, CVEs, dependency advisories, threat models, security audits",
+      "keywords": [
+        "security",
+        "vulnerab*",
+        "cve*",
+        "threat model"
+      ],
+      "example": "npm audit shows a critical advisory in a transitive dependency"
+    },
+    {
+      "id": "privacy",
+      "route": "frontier",
+      "description": "Personal data and compliance: PII, GDPR, HIPAA, retention, consent, data exports",
+      "keywords": [
+        "pii",
+        "gdpr",
+        "hipaa",
+        "personal data"
+      ],
+      "example": "a user asked us to delete everything we have on them"
+    },
+    {
+      "id": "network-exposure",
+      "route": "frontier",
+      "description": "Exposing services: firewall rules, open ports, CORS, public endpoints, ingress",
+      "keywords": [
+        "firewall",
+        "cors",
+        "ingress",
+        "port forward"
+      ],
+      "example": "make the admin panel reachable from outside the office"
+    },
+    {
+      "id": "schema-change",
+      "route": "frontier",
+      "description": "Database schema changes and migrations: columns, renames, indexes on big tables, backfills",
+      "keywords": [
+        "migrat*",
+        "schema change",
+        "alter table",
+        "backfill*"
+      ],
+      "example": "add a phone number column to the users table"
+    },
+    {
+      "id": "destructive-data",
+      "route": "frontier",
+      "description": "Deleting, overwriting or bulk-editing real data, or one-off scripts against production data",
+      "keywords": [
+        "drop table",
+        "truncate",
+        "purge*",
+        "data loss",
+        "delete all"
+      ],
+      "example": "clean out the orders older than 2019"
+    },
+    {
+      "id": "data-integrity",
+      "route": "frontier",
+      "description": "Transactions, consistency, idempotency, double processing, exactly-once delivery",
+      "keywords": [
+        "idempoten*",
+        "exactly-once",
+        "double charge",
+        "transaction*"
+      ],
+      "example": "the nightly job sometimes processes the same order twice"
+    },
+    {
+      "id": "query-performance",
+      "route": "frontier",
+      "description": "Slow queries, indexes, query plans, N+1 queries",
+      "keywords": [
+        "slow query",
+        "query plan",
+        "n+1",
+        "explain analyze"
+      ],
+      "example": "the dashboard takes 9 seconds to load the orders list"
+    },
+    {
+      "id": "backup-restore",
+      "route": "frontier",
+      "description": "Backups, restores, disaster recovery",
+      "keywords": [
+        "disaster recovery"
+      ],
+      "example": "make sure we can get last week's data back if the disk dies"
+    },
+    {
+      "id": "system-design",
+      "route": "frontier",
+      "description": "Designing a system, service or major feature, or its architecture",
+      "keywords": [
+        "architect",
+        "system design"
+      ],
+      "example": "how should notifications work across email, push and SMS?"
+    },
+    {
+      "id": "api-contract",
+      "route": "frontier",
+      "description": "Designing or changing a public API, its contract or versioning; breaking changes",
+      "keywords": [
+        "breaking change",
+        "api design",
+        "api version"
+      ],
+      "example": "rename this field in the REST response that the mobile app uses"
+    },
+    {
+      "id": "cross-cutting",
+      "route": "frontier",
+      "description": "Changes that span several modules, packages, services or repos, or update many callers",
+      "keywords": [
+        "across the codebase",
+        "all callers",
+        "every service",
+        "monorepo-wide"
+      ],
+      "example": "switch every package from moment to date-fns"
+    },
+    {
+      "id": "large-refactor",
+      "route": "frontier",
+      "description": "Restructuring a large module or codebase: splitting, plugin systems, new layering, rewrites",
+      "keywords": [
+        "rewrite*",
+        "restructure",
+        "plugin system"
+      ],
+      "example": "this 2,000-line file needs to become something maintainable"
+    },
+    {
+      "id": "technology-choice",
+      "route": "frontier",
+      "description": "Choosing between technologies, frameworks, databases or vendors, with trade-offs",
+      "keywords": [
+        "trade-off",
+        "tradeoff",
+        "should we use",
+        "which database"
+      ],
+      "example": "Postgres or DynamoDB for the event log?"
+    },
+    {
+      "id": "caching",
+      "route": "frontier",
+      "description": "Caching strategy, invalidation, staleness between a cache and its source",
+      "keywords": [
+        "cache invalidation",
+        "caching strategy",
+        "stale cache"
+      ],
+      "example": "users see their old profile picture for an hour after changing it"
+    },
+    {
+      "id": "messaging",
+      "route": "frontier",
+      "description": "Queues, events, streams, pub/sub, retries, ordering, dead letters",
+      "keywords": [
+        "kafka",
+        "rabbitmq",
+        "pub/sub",
+        "event-driven",
+        "dead letter",
+        "message queue"
+      ],
+      "example": "make sure webhook events are handled in order even when one fails"
+    },
+    {
+      "id": "unknown-cause",
+      "route": "frontier",
+      "description": "A bug whose cause isn't known yet; unexplained behavior that needs investigation",
+      "keywords": [
+        "root cause",
+        "no idea why",
+        "can't figure out why"
+      ],
+      "example": "the export button works for me but not for my coworker"
+    },
+    {
+      "id": "intermittent",
+      "route": "frontier",
+      "description": "Intermittent, flaky or hard-to-reproduce failures",
+      "keywords": [
+        "intermittent",
+        "flaky",
+        "sometimes fails",
+        "randomly fails"
+      ],
+      "example": "CI fails maybe one run in ten"
+    },
+    {
+      "id": "concurrency",
+      "route": "frontier",
+      "description": "Race conditions, deadlocks, locks, threads, parallel or async ordering",
+      "keywords": [
+        "race condition",
+        "deadlock",
+        "concurren*",
+        "thread-safe",
+        "mutex"
+      ],
+      "example": "two requests at once can both grab the last seat"
+    },
+    {
+      "id": "resource-performance",
+      "route": "frontier",
+      "description": "Memory leaks, profiling, CPU spikes, things getting slower over time, latency",
+      "keywords": [
+        "memory leak",
+        "profiling",
+        "cpu spike",
+        "latency",
+        "out of memory",
+        "oom"
+      ],
+      "example": "the app gets slower the longer it runs"
+    },
+    {
+      "id": "incident",
+      "route": "frontier",
+      "description": "A production incident, outage, or postmortem",
+      "keywords": [
+        "production",
+        "incident*",
+        "outage*",
+        "postmortem*",
+        "prod is down"
+      ],
+      "example": "the site is returning 502s for everyone"
+    },
+    {
+      "id": "regression",
+      "route": "frontier",
+      "description": "Something broke after an upgrade, deploy or merge and the cause is unclear",
+      "keywords": [
+        "regression*",
+        "broke after",
+        "stopped working after"
+      ],
+      "example": "logins started failing after we bumped the framework version"
+    },
+    {
+      "id": "distributed-debugging",
+      "route": "frontier",
+      "description": "Debugging across services: tracing, correlating logs, timeouts between systems",
+      "keywords": [
+        "distributed tracing",
+        "between services",
+        "upstream timeout"
+      ],
+      "example": "the payment service times out only when called from the API gateway"
+    },
+    {
+      "id": "time-and-dates",
+      "route": "frontier",
+      "description": "Time zones, daylight saving, calendars, date arithmetic bugs",
+      "keywords": [
+        "timezone",
+        "time zone",
+        "daylight saving",
+        "utc offset"
+      ],
+      "example": "users in Australia see yesterday's date on their dashboard"
+    },
+    {
+      "id": "numeric-precision",
+      "route": "frontier",
+      "description": "Money or numeric precision: rounding, floating point, currency conversion",
+      "keywords": [
+        "rounding",
+        "floating point",
+        "precision",
+        "off by a cent"
+      ],
+      "example": "the checkout total is sometimes a cent off"
+    },
+    {
+      "id": "payments",
+      "route": "frontier",
+      "description": "Billing, payments, invoices, subscriptions, refunds, taxes",
+      "keywords": [
+        "billing",
+        "payment*",
+        "invoice*",
+        "refund*",
+        "stripe",
+        "checkout"
+      ],
+      "example": "prorate the plan change when someone upgrades mid-month"
+    },
+    {
+      "id": "infrastructure",
+      "route": "frontier",
+      "description": "Infrastructure: Kubernetes, Terraform, cloud resources, IAM, networking, DNS",
+      "keywords": [
+        "kubernetes",
+        "terraform",
+        "helm",
+        "iam",
+        "dns",
+        "load balancer"
+      ],
+      "example": "give the worker pods access to the S3 bucket"
+    },
+    {
+      "id": "ci-cd",
+      "route": "frontier",
+      "description": "CI/CD pipelines, release automation, deployments, rollbacks",
+      "keywords": [
+        "deploy*",
+        "ci pipeline",
+        "github actions",
+        "rollback",
+        "release pipeline"
+      ],
+      "example": "ship to prod automatically when we tag a release"
+    },
+    {
+      "id": "major-upgrade",
+      "route": "frontier",
+      "description": "Major framework or runtime upgrades, or porting between languages or frameworks",
+      "keywords": [
+        "major version",
+        "port to",
+        "upgrade react",
+        "upgrade node",
+        "to typescript"
+      ],
+      "example": "move the frontend from Vue 2 to Vue 3"
+    },
+    {
+      "id": "code-review",
+      "route": "frontier",
+      "description": "Reviewing a non-trivial diff or pull request for correctness",
+      "keywords": [
+        "code review",
+        "review this pr",
+        "review the diff",
+        "review my changes"
+      ],
+      "example": "anything wrong with this change before I merge it?"
+    },
+    {
+      "id": "test-strategy",
+      "route": "frontier",
+      "description": "Test strategy, testing complex logic, integration or end-to-end tests across components",
+      "keywords": [
+        "test strategy",
+        "integration test",
+        "end-to-end",
+        "e2e test"
+      ],
+      "example": "how do we test the sync between the app and the server?"
+    },
+    {
+      "id": "algorithm",
+      "route": "frontier",
+      "description": "Designing or analyzing an algorithm, data structure or its complexity",
+      "keywords": [
+        "algorithm*",
+        "big-o",
+        "time complexity",
+        "data structure"
+      ],
+      "example": "find the fastest way to match these 2 million records"
+    },
+    {
+      "id": "machine-learning",
+      "route": "frontier",
+      "description": "Training or evaluating models, data leakage, model or metric choice",
+      "keywords": [
+        "train a model",
+        "fine-tun*",
+        "evaluation metric",
+        "overfitting"
+      ],
+      "example": "why is the validation accuracy so much higher than in production?"
+    },
+    {
+      "id": "legal-licensing",
+      "route": "frontier",
+      "description": "Licensing, legal or contractual questions about code or data",
+      "keywords": [
+        "license*",
+        "licensing",
+        "gpl",
+        "copyright"
+      ],
+      "example": "can we ship this library in a closed-source app?"
+    },
+    {
+      "id": "open-ended-goal",
+      "route": "frontier",
+      "description": "A vague or open-ended goal with many steps",
+      "keywords": [
+        "production-ready",
+        "from scratch",
+        "build me an app",
+        "end to end app"
+      ],
+      "example": "turn this script into a real product"
+    },
+    {
+      "id": "product-decision",
+      "route": "frontier",
+      "description": "Product or UX decisions with trade-offs, beyond styling",
+      "keywords": [
+        "user experience",
+        "ux flow",
+        "onboarding flow"
+      ],
+      "example": "should signup ask for a credit card up front?"
+    },
+    {
+      "id": "planning",
+      "route": "frontier",
+      "description": "Planning work: roadmaps, estimates, breaking a project into tasks or phases",
+      "keywords": [
+        "roadmap*",
+        "plan the",
+        "break this down"
+      ],
+      "example": "what order should we build the v2 features in?"
+    },
+    {
+      "id": "production-config",
+      "route": "frontier",
+      "description": "Changing configuration, feature flags or limits that affect production behavior",
+      "keywords": [
+        "feature flag",
+        "rate limit",
+        "quota*",
+        "timeout setting"
+      ],
+      "example": "raise the upload limit to 2 GB"
+    },
+    {
+      "id": "low-level-systems",
+      "route": "frontier",
+      "description": "Low-level systems work: memory management, unsafe code, FFI, kernels, drivers, segfaults",
+      "keywords": [
+        "unsafe",
+        "ffi",
+        "segfault*",
+        "kernel*",
+        "memory corruption"
+      ],
+      "example": "the native module crashes the process on exit"
+    },
+    {
+      "id": "build-toolchain",
+      "route": "frontier",
+      "description": "Broken builds or toolchains: bundlers, compilers, linkers, monorepo tooling",
+      "keywords": [
+        "build fails",
+        "linker error",
+        "webpack config",
+        "vite config",
+        "compile error"
+      ],
+      "example": "the build works locally but the Docker build can't resolve the workspace packages"
+    },
+    {
+      "id": "observability",
+      "route": "frontier",
+      "description": "Designing monitoring, alerting, SLOs or dashboards",
+      "keywords": [
+        "alerting",
+        "slo",
+        "observability",
+        "on-call"
+      ],
+      "example": "what should page someone at 3 a.m.?"
+    },
+    {
+      "id": "data-pipeline",
+      "route": "frontier",
+      "description": "Data pipelines and ETL: transformation correctness at scale, reprocessing",
+      "keywords": [
+        "etl",
+        "data pipeline",
+        "spark",
+        "airflow"
+      ],
+      "example": "rerun last month's events through the new enrichment step"
+    },
+    {
+      "id": "docstrings",
+      "route": "local",
+      "description": "Write or improve docstrings, JSDoc or code comments",
+      "keywords": [
+        "docstring*",
+        "jsdoc",
+        "comment*"
+      ],
+      "example": "document what this function returns"
+    },
+    {
+      "id": "readme-docs",
+      "route": "local",
+      "description": "Write or edit README or docs prose for something that already exists",
+      "keywords": [
+        "readme",
+        "document how"
+      ],
+      "example": "add an install section to the README"
+    },
+    {
+      "id": "change-notes",
+      "route": "local",
+      "description": "Changelogs, release notes, commit messages or PR descriptions from a given diff or list",
+      "keywords": [
+        "changelog",
+        "release notes",
+        "commit message",
+        "pr description"
+      ],
+      "example": "write release notes from these commits"
+    },
+    {
+      "id": "summarize",
+      "route": "local",
+      "description": "Summarize given text, logs or notes",
+      "keywords": [
+        "summar*",
+        "tl;dr"
+      ],
+      "example": "what happened in this log?"
+    },
+    {
+      "id": "explain-snippet",
+      "route": "local",
+      "description": "Explain how a given small piece of code or command works",
+      "keywords": [
+        "what does this",
+        "explain this",
+        "how does this"
+      ],
+      "example": "what does this bash one-liner do?"
+    },
+    {
+      "id": "explain-error",
+      "route": "local",
+      "description": "Explain what a specific error message means, without debugging a whole system",
+      "keywords": [
+        "what does this error mean",
+        "what does this error"
+      ],
+      "example": "what does 'ENOENT: no such file or directory' mean?"
+    },
+    {
+      "id": "convert-format",
+      "route": "local",
+      "description": "Convert data between formats: JSON, YAML, CSV, TOML, XML, markdown tables",
+      "keywords": [
+        "json to",
+        "yaml to",
+        "csv to",
+        "to yaml",
+        "to json",
+        "to csv",
+        "to toml"
+      ],
+      "example": "turn this CSV into a JSON array"
+    },
+    {
+      "id": "rename-local",
+      "route": "local",
+      "description": "Rename a variable or function within one file or a small scope",
+      "keywords": [
+        "rename*"
+      ],
+      "example": "rename tmp to retryCount in this function"
+    },
+    {
+      "id": "format-lint",
+      "route": "local",
+      "description": "Formatting, lint fixes, import sorting, whitespace",
+      "keywords": [
+        "lint*",
+        "prettier",
+        "sort imports",
+        "reformat",
+        "formatting"
+      ],
+      "example": "fix the eslint warnings in this file"
+    },
+    {
+      "id": "wording",
+      "route": "local",
+      "description": "Typos, spelling, grammar or wording of strings, messages and docs",
+      "keywords": [
+        "typo*",
+        "spelling",
+        "grammar",
+        "wording",
+        "reword"
+      ],
+      "example": "make this error message friendlier"
+    },
+    {
+      "id": "boilerplate",
+      "route": "local",
+      "description": "Boilerplate and config scaffolding: .gitignore, editorconfig, basic Dockerfile, package scripts, templates",
+      "keywords": [
+        "boilerplate",
+        "gitignore",
+        "editorconfig",
+        "scaffold"
+      ],
+      "example": "add an npm script that runs the linter"
+    },
+    {
+      "id": "simple-test",
+      "route": "local",
+      "description": "Unit tests for a small, pure function with clear behavior",
+      "keywords": [
+        "unit test for",
+        "test for this function"
+      ],
+      "example": "write tests for slugify()"
+    },
+    {
+      "id": "type-annotations",
+      "route": "local",
+      "description": "Add types or type hints to a small piece of code",
+      "keywords": [
+        "type hints",
+        "type annotations",
+        "add types"
+      ],
+      "example": "add TypeScript types to this helper"
+    },
+    {
+      "id": "regex",
+      "route": "local",
+      "description": "Write or explain a regular expression for a clear pattern",
+      "keywords": [
+        "regex*",
+        "regular expression"
+      ],
+      "example": "match a US zip code"
+    },
+    {
+      "id": "shell-command",
+      "route": "local",
+      "description": "A small shell command or one-liner",
+      "keywords": [
+        "one-liner",
+        "bash command",
+        "shell command"
+      ],
+      "example": "find every file over 100 MB in this folder"
+    },
+    {
+      "id": "sample-data",
+      "route": "local",
+      "description": "Generate sample, fixture or mock data",
+      "keywords": [
+        "fake data*",
+        "mock data*",
+        "fixture*",
+        "sample data*",
+        "seed data*"
+      ],
+      "example": "20 fake users for the tests"
+    },
+    {
+      "id": "simple-query",
+      "route": "local",
+      "description": "A simple read-only SQL query against a schema you're given",
+      "keywords": [
+        "select query",
+        "write a query"
+      ],
+      "example": "count orders per customer from this schema"
+    },
+    {
+      "id": "styling",
+      "route": "local",
+      "description": "Small styling changes: colors, spacing, alignment, fonts",
+      "keywords": [
+        "css",
+        "tailwind class",
+        "font size"
+      ],
+      "example": "make the button blue and center it"
+    },
+    {
+      "id": "translate-text",
+      "route": "local",
+      "description": "Translate UI strings or text between natural languages",
+      "keywords": [
+        "translat*"
+      ],
+      "example": "these labels in Spanish"
+    },
+    {
+      "id": "logging",
+      "route": "local",
+      "description": "Add log statements or improve log messages in one place",
+      "keywords": [
+        "add logging",
+        "log message",
+        "log statement"
+      ],
+      "example": "log the request id when this fails"
+    },
+    {
+      "id": "small-refactor",
+      "route": "local",
+      "description": "A small refactor inside one function: extract a variable, simplify a condition, callbacks to async/await",
+      "keywords": [
+        "extract a function",
+        "simplify this",
+        "async/await",
+        "early return"
+      ],
+      "example": "flatten these nested ifs"
+    },
+    {
+      "id": "project-notes",
+      "route": "local",
+      "description": "Write or update project notes, like .agents/context entries",
+      "keywords": [
+        ".agents/context",
+        "context entry",
+        "handoff note"
+      ],
+      "example": "note how the backup script works"
+    },
+    {
+      "id": "small-helper",
+      "route": "local",
+      "description": "A small utility function with a clear spec: strings, dates formatting, arrays",
+      "keywords": [
+        "helper function",
+        "utility function",
+        "util function"
+      ],
+      "example": "a function that turns 1536 into '1.5 KB'"
+    },
+    {
+      "id": "markdown",
+      "route": "local",
+      "description": "Markdown formatting, tables or simple diagrams from information you're given",
+      "keywords": [
+        "markdown",
+        "mermaid",
+        "table of"
+      ],
+      "example": "turn these notes into a markdown table"
+    },
+    {
+      "id": "constants",
+      "route": "local",
+      "description": "Extract magic numbers or strings into constants or enums",
+      "keywords": [
+        "magic number",
+        "into constants",
+        "into an enum"
+      ],
+      "example": "pull these status strings into an enum"
+    },
+    {
+      "id": "clean-up-list",
+      "route": "local",
+      "description": "Clean up pasted text or lists: dedupe, sort, normalize",
+      "keywords": [
+        "dedupe",
+        "deduplicate",
+        "sort this list",
+        "normalize these"
+      ],
+      "example": "sort these names and remove duplicates"
+    },
+    {
+      "id": "usage-example",
+      "route": "local",
+      "description": "Write a usage example or snippet for an existing function or API",
+      "keywords": [
+        "usage example",
+        "example of how to use"
+      ],
+      "example": "show how to call parseConfig()"
+    },
+    {
+      "id": "cli-help",
+      "route": "local",
+      "description": "Help text, usage messages or simple argument parsing for a small script",
+      "keywords": [
+        "help text",
+        "usage message",
+        "--help"
+      ],
+      "example": "add a --help that lists the flags"
+    },
+    {
+      "id": "static-markup",
+      "route": "local",
+      "description": "Simple HTML markup or static page content",
+      "keywords": [
+        "html",
+        "landing page copy"
+      ],
+      "example": "an about page with three sections"
+    },
+    {
+      "id": "config-example",
+      "route": "local",
+      "description": "Example config or .env.example files with placeholders, no real values",
+      "keywords": [
+        ".env.example",
+        "example config",
+        "sample config"
+      ],
+      "example": "write an .env.example for these variables"
+    },
+    {
+      "id": "rename-files",
+      "route": "local",
+      "description": "Move or rename a few files and fix their imports in a small project",
+      "keywords": [
+        "move this file",
+        "rename this file"
+      ],
+      "example": "move utils.js into lib/"
+    },
+    {
+      "id": "accessibility-labels",
+      "route": "local",
+      "description": "Add alt text, aria labels or other simple accessibility attributes",
+      "keywords": [
+        "alt text",
+        "aria-label",
+        "aria label"
+      ],
+      "example": "add alt text to the images on this page"
+    },
+    {
+      "id": "todo-list",
+      "route": "local",
+      "description": "Turn notes into a checklist or task list, without planning the work itself",
+      "keywords": [
+        "checklist*",
+        "todo list",
+        "to-do list"
+      ],
+      "example": "make a checklist from these meeting notes"
+    }
+  ]
+}

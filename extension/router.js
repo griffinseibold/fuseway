@@ -1,7 +1,7 @@
 // Routing and backends for the @loadout chat participant. No vscode imports, so node --test can run it.
 //
-// Per request: deterministic rules decide what they can (applyRules). Otherwise Qwen classifies LOCAL or FRONTIER (free, ~0.3 s). LOCAL is final. FRONTIER goes to Haiku to
-// confirm (~1K tokens), because Qwen over-escalates. Frontier work goes to whichever of Claude and Codex has
+// Per request: deterministic rules decide what they can (applyRules). Otherwise the local model matches the request
+// against the rule catalog (rules.json) by meaning (free); see classify for how matches decide, and when Haiku confirms (~1K tokens). Frontier work goes to whichever of Claude and Codex has
 // more of its 5-hour window left, from the utilization both CLIs report. All three backends are agent CLIs
 // that read and edit the workspace themselves: Codex on the local model, Claude Code, and Codex.
 const { spawn } = require('child_process');
@@ -17,10 +17,6 @@ const CODEX_SESSIONS = path.join(os.homedir(), '.codex', 'sessions');
 const LIMIT_ERROR = /usage limit|rate limit|limit reached|quota|\b429\b/i;
 
 const LABELS = { local: 'Local model', claude: 'Claude', codex: 'Codex' };
-const ROUTER_SYSTEM = 'You route coding requests. Reply with exactly one word.\n' +
-  'LOCAL: a small model can do it: mechanical, single-file or self-contained, drafting, summarizing, formatting, boilerplate, simple tests, docs.\n' +
-  'FRONTIER: needs a strong model: design or architecture, non-obvious debugging, multi-file or cross-service changes, security, concurrency, anything where a wrong answer is costly.';
-
 const readJson = (p, fallback) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } };
 function which(name, fallbacks = []) {
   for (const dir of (process.env.PATH || '').split(path.delimiter)) if (fs.existsSync(path.join(dir, name))) return path.join(dir, name);
@@ -33,80 +29,58 @@ class BackendError extends Error {
   constructor(message, limited) { super(message); this.limited = limited; }
 }
 
-// ---------- routing ----------
-
-function routerInput(prompt, previousPrompt) {
-  return previousPrompt ? `Previous request in this chat: ${previousPrompt.slice(0, 500)}\n\nNew request: ${prompt}` : prompt;
-}
-
-async function askQwen(input) {
-  const local = readJson(LOCAL_CONFIG, null);
-  if (!local) throw new Error('no local model configured (run `loadout model`)');
-  const res = await fetch(`${local.url}/chat/completions`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(20_000),
-    body: JSON.stringify({ model: local.model, max_tokens: 5, temperature: 0, grammar: 'root ::= "LOCAL" | "FRONTIER"',
-      chat_template_kwargs: { enable_thinking: false },
-      messages: [{ role: 'system', content: ROUTER_SYSTEM }, { role: 'user', content: input }] }),
-  });
-  if (!res.ok) throw new Error(`local model HTTP ${res.status}`);
-  const r = await res.json();
-  return { label: r.choices[0].message.content.includes('FRONTIER') ? 'FRONTIER' : 'LOCAL', tokens: r.usage?.total_tokens || 0 };
-}
-
-async function askHaiku(input) {
-  // Run outside any repo with a one-line system prompt and no tools: ~1K tokens instead of ~38K.
-  const cwd = path.join(os.tmpdir(), 'loadout-router');
-  fs.mkdirSync(cwd, { recursive: true });
-  const { out } = await spawnCli(CLAUDE, ['-p', input, '--model', 'haiku', '--system-prompt', ROUTER_SYSTEM, '--tools', '',
-    '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--disable-slash-commands',
-    '--output-format', 'stream-json', '--verbose'], { cwd });
-  const s = out.split('\n').filter(Boolean).map(safeJson).reduce(claudeEvent, claudeState());
-  if (s.error) throw new BackendError(`haiku: ${s.error}`, LIMIT_ERROR.test(s.error));
-  return { label: /FRONTIER/i.test(s.text) ? 'FRONTIER' : 'LOCAL', tokens: s.inTok + s.outTok };
-}
-
-// ---------- deterministic rules ----------
-// Checked in order before any model is asked; the first match decides. A repo can extend them in
-// .agents/routing.json (lists are added to these, numbers replace them).
+// ---------- rules ----------
+// Two kinds. Structural rules (below) look at the conversation, attachments and size. Catalog rules
+// (rules.json) describe kinds of work: their frontier keywords decide with no model, and the local model
+// matches every request against all of their descriptions by meaning.
+const CATALOG = path.join(__dirname, 'rules.json');
 const DEFAULT_RULES = {
-  // Mistakes here are costly or need deep reasoning. Matched as word prefixes: "migrat" matches "migration".
-  frontierKeywords: ['security', 'vulnerab', 'authenticat', 'authoriz', 'oauth', 'login', 'sso', 'password', 'secret',
-    'credential', 'api key', 'access token', 'encrypt', 'crypto', 'permission', 'injection', 'xss', 'csrf', 'cve', 'sanitiz',
-    'architect', 'design', 'migrat', 'race condition', 'deadlock', 'concurren', 'thread-safe', 'memory leak', 'scalab',
-    'production', 'incident', 'outage', 'data loss', 'root cause', 'intermittent', 'flaky'],
-  // Small, mechanical jobs. Only applies to short requests with no frontier keyword.
-  localKeywords: ['docstring', 'jsdoc', 'comment', 'rename', 'typo', 'spelling', 'format', 'gitignore', 'commit message',
-    'changelog', 'summarize', 'summary', 'convert', 'boilerplate', 'readme', 'lint'],
   frontierPaths: [], // globs, e.g. "src/billing/**": any attached file there goes frontier
   maxLocalShare: 0.5, // prompt + attached files above this share of the local context window go frontier
   localAttempts: 2, // after this many local turns in a row, a "that didn't work" message goes frontier
   followUpChars: 300, // a message this short right after a frontier turn stays with that backend
-  maxLocalChars: 2000, // local keywords only count for requests shorter than this
   maxLocalFiles: 2, // more attached files than this goes frontier
 };
 const FAILURE = /(didn'?t|doesn'?t|does not|did not) work|not working|still (fail|broken|wrong|not)|is wrong|\bbroke|got an? (error|exception)|traceback|stack trace|tests? (fail|still)/i;
 
+// .agents/routing.json: numbers replace the defaults; frontierPaths adds globs; rules adds catalog entries;
+// disable removes catalog entries by id; frontierKeywords / localKeywords become one repo rule each.
 function loadRules(repoDir) {
   const repo = repoDir ? readJson(path.join(repoDir, '.agents', 'routing.json'), {}) : {};
+  const list = (v) => (Array.isArray(v) ? v : []);
   const out = { ...DEFAULT_RULES };
-  for (const [k, v] of Object.entries(repo)) {
-    if (!(k in DEFAULT_RULES)) continue;
-    out[k] = Array.isArray(DEFAULT_RULES[k]) ? [...DEFAULT_RULES[k], ...(Array.isArray(v) ? v : [])] : typeof v === 'number' ? v : DEFAULT_RULES[k];
+  for (const k of Object.keys(DEFAULT_RULES)) if (typeof DEFAULT_RULES[k] === 'number' && typeof repo[k] === 'number') out[k] = repo[k];
+  out.frontierPaths = [...DEFAULT_RULES.frontierPaths, ...list(repo.frontierPaths)];
+  const disabled = new Set(list(repo.disable));
+  const extra = list(repo.rules).filter((r) => r && r.id && (r.route === 'local' || r.route === 'frontier') && r.description);
+  for (const route of ['frontier', 'local']) {
+    const kws = list(repo[`${route}Keywords`]);
+    if (kws.length) extra.push({ id: `repo-${route}`, route, description: `Specific to this repo: ${kws.join(', ')}`, keywords: kws });
   }
+  out.catalog = [...readJson(CATALOG, { rules: [] }).rules, ...extra].filter((r) => !disabled.has(r.id));
   return out;
 }
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const keyword = (list, text) => list.find((w) => new RegExp(`\\b${escapeRe(w)}`, 'i').test(text));
+// Whole word, or a stem when it ends in "*". Boundaries are any non-alphanumeric, so ".env.example" works.
+const keywordRe = (w) => new RegExp(`(?<![a-z0-9])${escapeRe(w.replace(/\*$/, ''))}${w.endsWith('*') ? '' : '(?![a-z0-9])'}`, 'i');
+function keywordHit(catalog, route, text) {
+  for (const r of catalog) {
+    if (r.route !== route) continue;
+    const w = (r.keywords || []).find((k) => keywordRe(k).test(text));
+    if (w) return { rule: r, word: w.replace(/\*$/, '') };
+  }
+  return null;
+}
 const globRe = (g) => new RegExp(`^${g.split('**').map((part) => part.split('*').map(escapeRe).join('[^/]*')).join('.*')}$`);
 const kTokens = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
 
 // ctx: { prompt, turns: [{ user, meta: { backend } }], files: [{ path (repo-relative), bytes }], localContext, rules }
-// Returns { tier: 'local' | 'frontier' | 'same', backend?, trail } when a rule decides, else null.
-function applyRules({ prompt, turns = [], files = [], localContext = 32768, rules = DEFAULT_RULES }) {
+// Returns { tier: 'local' | 'frontier' | 'same', backend?, trail } when a rule decides with no model, else null.
+function applyRules({ prompt, turns = [], files = [], localContext = 32768, rules = loadRules() }) {
   const decide = (tier, why, backend) => ({ tier, backend, trail: [`rule: ${why}`] });
   const prev = turns.at(-1)?.meta?.backend;
-  if ((prev === 'claude' || prev === 'codex') && prompt.length <= rules.followUpChars && !keyword(rules.localKeywords, prompt))
+  if ((prev === 'claude' || prev === 'codex') && prompt.length <= rules.followUpChars && !keywordHit(rules.catalog, 'local', prompt))
     return decide('same', `short follow-up stays with ${LABELS[prev]}`, prev);
   let streak = 0;
   for (let i = turns.length - 1; i >= 0 && turns[i].meta?.backend === 'local'; i--) streak++;
@@ -116,35 +90,109 @@ function applyRules({ prompt, turns = [], files = [], localContext = 32768, rule
     return decide('frontier', `~${kTokens(tokens)} tokens is over ${Math.round(rules.maxLocalShare * 100)}% of the local context`);
   const pinned = files.find((f) => rules.frontierPaths.some((g) => globRe(g).test(f.path)));
   if (pinned) return decide('frontier', `${pinned.path} is on this repo's frontier list`);
-  const hard = keyword(rules.frontierKeywords, prompt);
-  if (hard) return decide('frontier', `mentions "${hard}"`);
   if (files.length > rules.maxLocalFiles) return decide('frontier', `${files.length} files attached`);
-  const easy = keyword(rules.localKeywords, prompt);
-  if (easy && prompt.length < rules.maxLocalChars) return decide('local', `"${easy}" task`);
   return null;
 }
 
-// Rules first; then Qwen; LOCAL is final; FRONTIER is checked by Haiku. Never throws: when in doubt, frontier.
+// ---------- models ----------
+
+const HAIKU_SYSTEM = 'You route coding requests. Reply with exactly one word.\n' +
+  'LOCAL: a small model can do it: mechanical, single-file or self-contained, drafting, summarizing, formatting, boilerplate, simple tests, docs.\n' +
+  'FRONTIER: needs a strong model: design or architecture, non-obvious debugging, multi-file or cross-service changes, security, concurrency, anything where a wrong answer is costly.';
+
+// The catalog prompt is the same for every request, so llama-server reuses its cached prefix.
+function matcherPrompt(catalog) {
+  return 'You route coding requests between a small local model and a strong frontier model, using the rules below.\n' +
+    'List every rule the request is related to, even loosely: "strong" when it clearly applies, "weak" when it only might. ' +
+    'List at most 4, most relevant first. An empty list is fine. Then set tier: LOCAL if a small model can do the whole request well, FRONTIER otherwise.\n\n' +
+    'Rules (id [route]: description; example):\n' +
+    catalog.map((r) => `- ${r.id} [${r.route}]: ${r.description}${r.example ? `; e.g. "${r.example}"` : ''}`).join('\n');
+}
+
+function matcherSchema(catalog) {
+  return { type: 'object', required: ['matches', 'tier'], properties: {
+    matches: { type: 'array', maxItems: 4, items: { type: 'object', required: ['id', 'strength'],
+      properties: { id: { enum: catalog.map((r) => r.id) }, strength: { enum: ['strong', 'weak'] } } } },
+    tier: { enum: ['LOCAL', 'FRONTIER'] } } };
+}
+
+function routerInput(prompt, previousPrompt) {
+  return previousPrompt ? `Previous request in this chat: ${previousPrompt.slice(0, 500)}\n\nNew request: ${prompt}` : prompt;
+}
+
+async function askQwen(input, catalog) {
+  const local = readJson(LOCAL_CONFIG, null);
+  if (!local) throw new Error('no local model configured (run `loadout model`)');
+  const res = await fetch(`${local.url}/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(30_000),
+    body: JSON.stringify({ model: local.model, max_tokens: 150, temperature: 0, cache_prompt: true,
+      json_schema: matcherSchema(catalog), chat_template_kwargs: { enable_thinking: false },
+      messages: [{ role: 'system', content: matcherPrompt(catalog) }, { role: 'user', content: input }] }),
+  });
+  if (!res.ok) throw new Error(`local model HTTP ${res.status}`);
+  const r = await res.json();
+  const out = JSON.parse(r.choices[0].message.content);
+  return { matches: out.matches || [], tier: out.tier, tokens: r.usage?.total_tokens || 0, cached: r.timings?.cache_n };
+}
+
+async function askHaiku(input, hint) {
+  // Run outside any repo with a one-line system prompt and no tools: ~1K tokens instead of ~38K.
+  const cwd = path.join(os.tmpdir(), 'loadout-router');
+  fs.mkdirSync(cwd, { recursive: true });
+  const prompt = hint ? `${input}\n\n(A routing rule that might apply: ${hint})` : input;
+  const { out } = await spawnCli(CLAUDE, ['-p', prompt, '--model', 'haiku', '--system-prompt', HAIKU_SYSTEM, '--tools', '',
+    '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--disable-slash-commands',
+    '--output-format', 'stream-json', '--verbose'], { cwd });
+  const s = out.split('\n').filter(Boolean).map(safeJson).reduce(claudeEvent, claudeState());
+  if (s.error) throw new BackendError(`haiku: ${s.error}`, LIMIT_ERROR.test(s.error));
+  return { label: /FRONTIER/i.test(s.text) ? 'FRONTIER' : 'LOCAL', tokens: s.inTok + s.outTok };
+}
+
+// Structural rules first (no model). Then the local model matches the request against the catalog by meaning:
+// - a strong frontier match goes frontier
+// - a frontier keyword, or a weak frontier match, goes to Haiku with the rule as a hint: such a request never
+//   goes local on the local model's word alone
+// - otherwise a strong local match or a local keyword stays local, and with no match Qwen's own tier decides
+//   (Haiku checks a FRONTIER)
+// Never throws: when in doubt, frontier.
 async function classify(ctx, deps = { qwen: askQwen, haiku: askHaiku, log: appendUsage }) {
-  const ruled = applyRules(ctx);
+  const rules = ctx.rules || loadRules();
+  const ruled = applyRules({ ...ctx, rules });
   if (ruled) return ruled;
+  const byId = new Map(rules.catalog.map((r) => [r.id, r]));
   const input = routerInput(ctx.prompt, ctx.turns?.at(-1)?.user);
   let q;
   try {
-    q = await deps.qwen(input);
+    q = await deps.qwen(input, rules.catalog);
     deps.log({ backend: 'router-qwen', ok: true, in: q.tokens, out: 0 });
   } catch (e) {
     // With the local model down, local work has nowhere to run, so there is nothing to ask Haiku.
     return { tier: 'frontier', trail: [`local model offline (${e.message})`] };
   }
-  if (q.label === 'LOCAL') return { tier: 'local', trail: ['Qwen: LOCAL'] };
-  try {
-    const h = await deps.haiku(input);
-    deps.log({ backend: 'router-haiku', ok: true, in: h.tokens, out: 0 });
-    return { tier: h.label === 'LOCAL' ? 'local' : 'frontier', trail: ['Qwen: FRONTIER', `Haiku: ${h.label}`] };
-  } catch (e) {
-    return { tier: 'frontier', trail: ['Qwen: FRONTIER', `Haiku failed (${e.message})`] };
-  }
+  const matches = q.matches.map((m) => ({ ...m, rule: byId.get(m.id) })).filter((m) => m.rule);
+  const shown = (m) => `${m.id} (${m.strength})`;
+  const haiku = async (trail, hint) => {
+    try {
+      const h = await deps.haiku(input, hint);
+      deps.log({ backend: 'router-haiku', ok: true, in: h.tokens, out: 0 });
+      return { tier: h.label === 'LOCAL' ? 'local' : 'frontier', trail: [...trail, `Haiku: ${h.label}`] };
+    } catch (e) {
+      return { tier: 'frontier', trail: [...trail, `Haiku failed (${e.message})`] };
+    }
+  };
+  const word = keywordHit(rules.catalog, 'frontier', ctx.prompt);
+  const said = word ? [`rule: ${word.rule.id} ("${word.word}")`] : [];
+  const strongFrontier = matches.find((m) => m.rule.route === 'frontier' && m.strength === 'strong');
+  if (strongFrontier) return { tier: 'frontier', trail: [...said, `rule ≈ ${shown(strongFrontier)}`] };
+  const weakFrontier = matches.find((m) => m.rule.route === 'frontier');
+  if (word) return haiku([...said, 'needs a frontier check'], word.rule.description);
+  if (weakFrontier) return haiku([`rule ≈ ${shown(weakFrontier)}`], weakFrontier.rule.description);
+  const localWord = keywordHit(rules.catalog, 'local', ctx.prompt);
+  const strongLocal = matches.find((m) => m.rule.route === 'local' && m.strength === 'strong');
+  if (strongLocal) return { tier: 'local', trail: [`rule ≈ ${shown(strongLocal)}`] };
+  if (localWord) return { tier: 'local', trail: [`rule: ${localWord.rule.id} ("${localWord.word}")`] };
+  if (q.tier === 'LOCAL') return { tier: 'local', trail: [matches.length ? `rule ≈ ${shown(matches[0])}` : 'no rule matched', 'Qwen: LOCAL'] };
+  return haiku(['no rule matched', 'Qwen: FRONTIER']);
 }
 
 // ---------- usage limits ----------
@@ -368,4 +416,4 @@ function usageMarkdown(hours = 5, now = Date.now()) {
 
 const localConfig = () => readJson(LOCAL_CONFIG, null);
 
-module.exports = { localConfig, LABELS, DEFAULT_RULES, loadRules, applyRules, classify, pickFrontier, readLimits, run, plan, usageMarkdown, claudeEvent, claudeState, codexEvent, codexState, claudeWindow, codexWindow, askQwen, askHaiku, BackendError };
+module.exports = { localConfig, LABELS, DEFAULT_RULES, loadRules, applyRules, keywordHit, matcherPrompt, classify, pickFrontier, readLimits, run, plan, usageMarkdown, claudeEvent, claudeState, codexEvent, codexState, claudeWindow, codexWindow, askQwen, askHaiku, BackendError };

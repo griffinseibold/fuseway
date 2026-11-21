@@ -11,42 +11,75 @@ const NOW = Date.UTC(2026, 10, 21, 16, 0) ;
 const inAnHour = NOW / 1000 + 3600;
 const noLog = () => {};
 
-// Prompts that no rule matches, so the models decide.
-const NEUTRAL = 'Write a unit test for a function that reverses a string';
+// Prompts that no keyword matches, so the models decide.
+const NEUTRAL = 'Write a unit test for a function that reverses a string'.replace('unit test for', 'quick check of');
+const qwenSays = (tier, matches = []) => async () => ({ tier, matches, tokens: 1 });
+const route = async (qwen, haiku = async () => assert.fail('Haiku asked')) => {
+  const hints = [];
+  const out = await r.classify({ prompt: NEUTRAL }, { qwen, haiku: async (i, hint) => { hints.push(hint); return haiku(i, hint); }, log: noLog });
+  return { ...out, hints };
+};
 
-test('Qwen LOCAL is final; Haiku is never asked', async () => {
-  let haikuCalls = 0;
-  const out = await r.classify({ prompt: NEUTRAL }, { qwen: async () => ({ label: 'LOCAL', tokens: 1 }), haiku: async () => { haikuCalls++; }, log: noLog });
-  assert.equal(out.tier, 'local');
-  assert.equal(haikuCalls, 0);
+test('a strong frontier match goes frontier without asking Haiku', async () => {
+  const out = await route(qwenSays('LOCAL', [{ id: 'docstrings', strength: 'strong' }, { id: 'concurrency', strength: 'strong' }]));
+  assert.deepEqual([out.tier, out.trail], ['frontier', ['rule ≈ concurrency (strong)']], 'frontier beats local');
 });
 
-test('Qwen FRONTIER is checked by Haiku, which can send it back to local', async () => {
-  const deps = (label) => ({ qwen: async () => ({ label: 'FRONTIER', tokens: 1 }), haiku: async () => ({ label, tokens: 1 }), log: noLog });
-  assert.equal((await r.classify({ prompt: NEUTRAL }, deps('LOCAL'))).tier, 'local');
-  assert.equal((await r.classify({ prompt: NEUTRAL }, deps('FRONTIER'))).tier, 'frontier');
+test('a weak frontier match asks Haiku, with the rule as a hint', async () => {
+  const out = await route(qwenSays('LOCAL', [{ id: 'caching', strength: 'weak' }]), async () => ({ label: 'LOCAL', tokens: 1 }));
+  assert.equal(out.tier, 'local');
+  assert.match(out.hints[0], /Caching strategy/);
+  assert.deepEqual(out.trail, ['rule ≈ caching (weak)', 'Haiku: LOCAL']);
+});
+
+test('a strong local match stays local; otherwise Qwen decides and Haiku checks FRONTIER', async () => {
+  assert.equal((await route(qwenSays('FRONTIER', [{ id: 'regex', strength: 'strong' }]))).tier, 'local');
+  assert.equal((await route(qwenSays('LOCAL', [{ id: 'regex', strength: 'weak' }]))).tier, 'local');
+  assert.equal((await route(qwenSays('LOCAL'))).tier, 'local');
+  const checked = await route(qwenSays('FRONTIER'), async () => ({ label: 'FRONTIER', tokens: 1 }));
+  assert.deepEqual([checked.tier, checked.hints], ['frontier', [undefined]]);
+  assert.equal((await route(qwenSays('LOCAL', [{ id: 'made-up-rule', strength: 'strong' }]))).tier, 'local', 'unknown ids are ignored');
 });
 
 test('with the local model down, everything goes frontier without asking Haiku', async () => {
-  let haikuCalls = 0;
-  const out = await r.classify({ prompt: NEUTRAL }, { qwen: async () => { throw new Error('refused'); }, haiku: async () => { haikuCalls++; }, log: noLog });
+  const out = await route(async () => { throw new Error('refused'); });
   assert.equal(out.tier, 'frontier');
   assert.match(out.trail.join(' '), /offline/);
-  assert.equal(haikuCalls, 0);
 });
 
 test('when Haiku fails, it errs toward frontier', async () => {
-  const fail = async () => { throw new Error('boom'); };
-  assert.equal((await r.classify({ prompt: NEUTRAL }, { qwen: async () => ({ label: 'FRONTIER' }), haiku: fail, log: noLog })).tier, 'frontier');
+  const out = await route(qwenSays('FRONTIER'), async () => { throw new Error('boom'); });
+  assert.equal(out.tier, 'frontier');
 });
 
-test('rules decide before any model is asked', async () => {
-  const never = { qwen: async () => assert.fail('Qwen asked'), haiku: async () => assert.fail('Haiku asked'), log: noLog };
-  const rule = async (ctx) => { const out = await r.classify(ctx, never); return [out.tier, out.trail[0]]; };
-  assert.deepEqual(await rule({ prompt: 'Review how we store passwords' }), ['frontier', 'rule: mentions "password"']);
-  assert.deepEqual(await rule({ prompt: 'Plan the database migration' }), ['frontier', 'rule: mentions "migrat"']);
-  assert.deepEqual(await rule({ prompt: 'Add a docstring to parse()' }), ['local', 'rule: "docstring" task']);
-  assert.deepEqual(await rule({ prompt: 'Add a docstring to the login handler' }), ['frontier', 'rule: mentions "login"'], 'frontier keywords beat local ones');
+test('a frontier keyword never goes local on the local model alone', async () => {
+  const deps = (qwen, label) => ({ qwen, haiku: async () => ({ label, tokens: 1 }), log: noLog });
+  const strong = await r.classify({ prompt: 'Review how we store passwords' }, deps(qwenSays('LOCAL', [{ id: 'secrets', strength: 'strong' }]), 'LOCAL'));
+  assert.deepEqual([strong.tier, strong.trail], ['frontier', ['rule: secrets ("password")', 'rule ≈ secrets (strong)']], 'keyword plus a strong match: no Haiku');
+  const checked = await r.classify({ prompt: 'Change the copyright year in the footer' }, deps(qwenSays('LOCAL', [{ id: 'wording', strength: 'strong' }]), 'LOCAL'));
+  assert.deepEqual([checked.tier, checked.trail], ['local', ['rule: legal-licensing ("copyright")', 'needs a frontier check', 'Haiku: LOCAL']]);
+  const held = await r.classify({ prompt: 'Change the copyright year in the footer' }, deps(qwenSays('LOCAL'), 'FRONTIER'));
+  assert.equal(held.tier, 'frontier');
+  const offline = await r.classify({ prompt: 'Review how we store passwords' }, deps(async () => { throw new Error('down'); }, 'LOCAL'));
+  assert.equal(offline.tier, 'frontier');
+});
+
+test('a local keyword stays local unless the model finds something riskier', async () => {
+  const never = async () => assert.fail('Haiku asked');
+  const local = await r.classify({ prompt: 'Add a docstring to parse()' }, { qwen: qwenSays('FRONTIER'), haiku: never, log: noLog });
+  assert.deepEqual([local.tier, local.trail], ['local', ['rule: docstrings ("docstring")']]);
+  const riskier = await r.classify({ prompt: 'Add a docstring to parse()' }, { qwen: qwenSays('LOCAL', [{ id: 'privacy', strength: 'strong' }]), haiku: never, log: noLog });
+  assert.equal(riskier.tier, 'frontier');
+});
+
+test('keywords match whole words unless they end in *', () => {
+  const cat = r.loadRules().catalog;
+  const hit = (text) => r.keywordHit(cat, 'frontier', text)?.rule.id ?? null;
+  assert.equal(hit('fix the helmet styles'), null, '"helm" is not a prefix');
+  assert.equal(hit('one slow page'), null, '"slo" is not a prefix');
+  assert.equal(hit('write the migration'), 'schema-change', '"migrat*" is a stem');
+  assert.equal(hit('we need SSO'), 'authentication');
+  assert.equal(r.keywordHit(cat, 'local', 'write an .env.example')?.rule.id, 'config-example');
 });
 
 test('size, file count and repo paths escalate deterministically', () => {
@@ -54,7 +87,7 @@ test('size, file count and repo paths escalate deterministically', () => {
   assert.equal(big.tier, 'frontier');
   assert.match(big.trail[0], /over 50% of the local context/);
   assert.equal(r.applyRules({ prompt: NEUTRAL, files: [{ path: 'a', bytes: 1 }, { path: 'b', bytes: 1 }, { path: 'c', bytes: 1 }] }).tier, 'frontier');
-  const rules = { ...r.DEFAULT_RULES, frontierPaths: ['src/billing/**'] };
+  const rules = { ...r.loadRules(), frontierPaths: ['src/billing/**'] };
   assert.match(r.applyRules({ prompt: NEUTRAL, files: [{ path: 'src/billing/invoice.ts', bytes: 10 }], rules }).trail[0], /frontier list/);
   assert.equal(r.applyRules({ prompt: NEUTRAL, files: [{ path: 'src/ui/button.ts', bytes: 10 }], rules }), null);
 });
@@ -68,16 +101,27 @@ test('conversation rules: follow-ups stick, repeated local failures escalate', (
   assert.equal(r.applyRules({ prompt: "that didn't work", turns: after('local') }), null, 'one local attempt is not enough');
 });
 
-test('a repo can extend the rules in .agents/routing.json', () => {
+test('a repo can add, disable and tune rules in .agents/routing.json', () => {
   const dir = mkdtempSync(join(tmpdir(), 'loadout-rules-'));
   mkdirSync(join(dir, '.agents'));
-  writeFileSync(join(dir, '.agents/routing.json'), JSON.stringify({ frontierKeywords: ['ledger'], maxLocalFiles: 5, unknown: 1 }));
+  writeFileSync(join(dir, '.agents/routing.json'), JSON.stringify({
+    frontierKeywords: ['ledger'], disable: ['styling'], maxLocalFiles: 5, unknown: 1,
+    rules: [{ id: 'billing-ui', route: 'frontier', description: 'Anything on the billing screens' }, { id: 'bad', route: 'maybe', description: 'x' }] }));
   const rules = r.loadRules(dir);
-  assert.ok(rules.frontierKeywords.includes('ledger') && rules.frontierKeywords.includes('password'), 'lists are added to the defaults');
+  const ids = rules.catalog.map((x) => x.id);
+  assert.ok(ids.includes('billing-ui') && ids.includes('repo-frontier') && ids.includes('secrets'));
+  assert.ok(!ids.includes('styling') && !ids.includes('bad'));
   assert.equal(rules.maxLocalFiles, 5);
   assert.equal(rules.unknown, undefined);
-  assert.equal(r.applyRules({ prompt: 'Update the ledger totals', rules }).tier, 'frontier');
-  assert.deepEqual(r.loadRules(join(dir, 'nope')), r.DEFAULT_RULES);
+  assert.equal(r.keywordHit(rules.catalog, 'frontier', 'Update the ledger totals').rule.id, 'repo-frontier');
+  assert.equal(r.loadRules(join(dir, 'nope')).catalog.length, r.loadRules().catalog.length);
+});
+
+test('the shipped catalog is well formed', () => {
+  const cat = r.loadRules().catalog;
+  assert.ok(cat.length >= 70);
+  assert.equal(new Set(cat.map((x) => x.id)).size, cat.length, 'unique ids');
+  for (const x of cat) assert.ok(['local', 'frontier'].includes(x.route) && x.description, x.id);
 });
 
 test('frontier work goes to the subscription with more 5-hour headroom', () => {

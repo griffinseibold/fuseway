@@ -23,7 +23,7 @@ git clone <this repo> ~/loadout && node ~/loadout/bin/loadout.mjs setup
 ```bash
 loadout extension
 ```
-This builds and installs a chat participant that routes each request itself. The local model classifies it for free, and Claude Haiku double-checks anything that looks hard. Deterministic rules decide first. Security words, a large attachment, a repo path you've pinned, or the local model failing twice all go frontier, and simple jobs like docstrings stay local. Frontier work goes to Claude Code or Codex, whichever subscription has more of its 5-hour window left. Each reply says who answered and what it cost. `/local`, `/claude` and `/codex` force a backend, and `/usage` shows both windows. See [extension/README.md](extension/README.md).
+This builds and installs a chat participant that routes each request itself. The local model classifies it for free, and Claude Haiku double-checks anything that looks hard. Structural rules decide first: a large attachment, a repo path you've pinned, or the local model failing twice all go frontier. The local model then matches the request against a catalog of 79 kinds of work (security, data, architecture and so on, versus docs, formatting and helpers). Anything near a frontier rule escalates, and Haiku breaks ties. Frontier work goes to Claude Code or Codex, whichever subscription has more of its 5-hour window left. Each reply says who answered and what it cost. `/local`, `/claude` and `/codex` force a backend, and `/usage` shows both windows. See [extension/README.md](extension/README.md).
 
 ## Add to a repo
 ```bash

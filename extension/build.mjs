@@ -10,7 +10,7 @@ const DIR = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(DIR, 'package.json'), 'utf8'));
 const out = process.argv[2] || join(DIR, `${pkg.name}.vsix`);
 const REPO = join(DIR, '..');
-const SHIP = ['package.json', 'extension.js', 'router.js', 'README.md'];
+const SHIP = ['package.json', 'extension.js', 'router.js', 'rules.json', 'README.md'];
 // The loadout CLI and everything `loadout init` installs, at the same paths as in the repo, so the bundled CLI
 // finds them next to itself.
 const BUNDLE = ['bin/loadout.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',
