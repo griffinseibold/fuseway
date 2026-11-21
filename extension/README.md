@@ -1,6 +1,6 @@
-# Loadout
+# Fuseway
 
-`@loadout` in VS Code's chat picks the cheapest model that can handle each request:
+`@fuseway` in VS Code's chat picks the cheapest model that can handle each request:
 
 1. Deterministic rules decide first (see below).
 2. Otherwise, your local model classifies it (free, about 0.3 s). Simple work stays local.
@@ -43,17 +43,17 @@ Keywords match whole words; one ending in `*` is a stem (`migrat*` matches "migr
 `/stats` shows the scoreboard. The decision maker starts as the cascade above. Two other candidates are measured alongside it: **local-only** (no Haiku, so free) and **Haiku alone**. Each candidate's name includes its local model, so a new model starts with no history and has to earn its place.
 
 - **Outcomes, deterministically:** your next message saying it didn't work, or switching backends, is a failure. Moving on is a success. A thumbs up or down overrides both. A local answer's outcome labels what the right call was; frontier answers don't, because they can't show local would have failed.
-- **Quietly in the background:** after a turn, when nothing else is running, it fills in the other routers' answers and gives thin candidates labeled cases. Your own resolved requests come first, then the shipped set. Free routers always run. Paid ones stay within `loadout.learning.dailyPaidTokens` (20K a day by default).
+- **Quietly in the background:** after a turn, when nothing else is running, it fills in the other routers' answers and gives thin candidates labeled cases. Your own resolved requests come first, then the shipped set. Free routers always run. Paid ones stay within `fuseway.learning.dailyPaidTokens` (20K a day by default).
 - **Recent beats long:** results lose half their weight every 7 days. Volume earns nothing beyond 15 recent results, so a model that has done well lately beats one that has been okay for months. Paid tokens and latency count against a router.
 - **Slow to switch:** a challenger needs 15 recent results and a 3-point lead, and the decision maker changes at most once a day. The status bar says when it does. A router tied to a local model you've replaced hands over right away.
 - **Agents** (backend, model and effort) get the same recency-weighted success rate, plus tokens, time and share of the 5-hour window per call.
 
-Everything stays in `~/.local/state/loadout/learning.jsonl` on this machine. Turn it off with `loadout.learning.enabled`.
+Everything stays in `~/.local/state/fuseway/learning.jsonl` on this machine. Turn it off with `fuseway.learning.enabled`.
 
 ## Commands
 Chat: `/local`, `/claude`, `/codex` force a backend; `/usage` shows both subscription windows and recent calls.
-Settings: `loadout.allowEdits`, `loadout.claudeModel`, `loadout.codexEffort`, `loadout.frontier`.
+Settings: `fuseway.allowEdits`, `fuseway.claudeModel`, `fuseway.codexEffort`, `fuseway.frontier`.
 
-Command palette: **Loadout: Check Setup**, **Loadout: Set Up Local Model**, **Loadout: Add to This Repo**.
+Command palette: **Fuseway: Check Setup**, **Fuseway: Set Up Local Model**, **Fuseway: Add to This Repo**.
 
-Needs the `claude` and `codex` CLIs signed in to your subscriptions, and `loadout model` for the local model.
+Needs the `claude` and `codex` CLIs signed in to your subscriptions, and `fuseway model` for the local model.

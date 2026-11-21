@@ -102,7 +102,7 @@ test('conversation rules: follow-ups stick, repeated local failures escalate', (
 });
 
 test('a repo can add, disable and tune rules in .agents/routing.json', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'loadout-rules-'));
+  const dir = mkdtempSync(join(tmpdir(), 'fuseway-rules-'));
   mkdirSync(join(dir, '.agents'));
   writeFileSync(join(dir, '.agents/routing.json'), JSON.stringify({
     frontierKeywords: ['ledger'], disable: ['styling'], maxLocalFiles: 5, unknown: 1,

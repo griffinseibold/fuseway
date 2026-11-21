@@ -1,5 +1,5 @@
 {
-  "_comment": "Local model per hardware tier, best first. loadout model --recommend picks the first tier the machine meets. vramGiB is usable GPU memory (on Apple Silicon, about 65% of unified memory). Only entries with 'measured' were benchmarked; the rest are estimates. Rerun local-llm/bench.sh and update this file when you measure a tier.",
+  "_comment": "Local model per hardware tier, best first. fuseway model --recommend picks the first tier the machine meets. vramGiB is usable GPU memory (on Apple Silicon, about 65% of unified memory). Only entries with 'measured' were benchmarked; the rest are estimates. Rerun local-llm/bench.sh and update this file when you measure a tier.",
   "llamaCppBuild": "b10731",
   "tiers": [
     {

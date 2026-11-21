@@ -15,8 +15,9 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKSPACE = process.env.FUSION_WORKSPACE || REPO;
 const LOG = process.env.FUSION_LOG || join(REPO, '.agents', 'usage.jsonl');
 const TIMEOUT_MS = Number(process.env.FUSION_TIMEOUT_MS || 600_000);
-// `loadout model` records this machine's local model server; LOCAL_LLM_URL overrides it.
-const LOCAL = (() => { try { return JSON.parse(readFileSync(join(homedir(), '.config', 'loadout', 'local.json'), 'utf8')); } catch { return {}; } })();
+// `fuseway model` records this machine's local model server; LOCAL_LLM_URL overrides it.
+// fuseway was called loadout; read the old path if the new one isn't there yet.
+const LOCAL = (() => { for (const d of ['fuseway', 'loadout']) { try { return JSON.parse(readFileSync(join(homedir(), '.config', d, 'local.json'), 'utf8')); } catch {} } return {}; })();
 const LOCAL_URL = (process.env.LOCAL_LLM_URL || LOCAL.url || 'http://localhost:8080/v1').replace(/\/$/, '');
 const CHILD_ENV = { ...process.env, FUSION_CHILD: '1' };
 
@@ -93,7 +94,7 @@ const BACKENDS = {
         body: JSON.stringify({ model: process.env.LOCAL_LLM_MODEL || LOCAL.model || 'local', messages, stream: false }),
       });
     } catch (e) {
-      throw new Error(`local model unreachable at ${LOCAL_URL} (${e.cause?.code || e.message}). Is it running? Run \`loadout model\` to find or set up one.`);
+      throw new Error(`local model unreachable at ${LOCAL_URL} (${e.cause?.code || e.message}). Is it running? Run \`fuseway model\` to find or set up one.`);
     }
     if (!res.ok) throw new Error(`local model HTTP ${res.status}: ${(await res.text()).slice(0, 1000)}`);
     const r = await res.json();

@@ -9,7 +9,7 @@
 - Test: `TODO`
 - Lint/format: `TODO`
 
-{{LOADOUT_BLOCK}}
+{{FUSEWAY_BLOCK}}
 
 ## Parallel agents
 - One agent per git worktree: `git worktree add ../<repo>.worktrees/<task> -b <task>`. Never edit files outside your own worktree.

@@ -1,7 +1,7 @@
 // The background learner: scores decision makers (routers) and agents from what actually happened, and slowly
 // promotes a better router. No vscode imports, so node --test can run it.
 //
-// Everything is an event in one append-only log (~/.local/state/loadout/learning.jsonl):
+// Everything is an event in one append-only log (~/.local/state/fuseway/learning.jsonl):
 //   decision  { id, prompt, routers: { key: tier }, served: agent, local: bool }  one per routed request
 //   router    { id, key, tier, tokens, ms }    a router's answer, added later (background shadow run)
 //   outcome   { id, outcome, reason, explicit } success | fail for a decision's served agent
@@ -15,8 +15,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const STATE = path.join(os.homedir(), '.local', 'state', 'loadout');
-const LOG = process.env.LOADOUT_LEARNING_LOG || path.join(STATE, 'learning.jsonl');
+const STATE = path.join(os.homedir(), '.local', 'state', 'fuseway');
+const LOG = process.env.FUSEWAY_LEARNING_LOG || path.join(STATE, 'learning.jsonl');
 const DAY = 86_400_000;
 
 const POLICY = {

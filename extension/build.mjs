@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Packages this folder as a VSIX (a zip with two manifest files) without vsce or other dependencies.
-//   node extension/build.mjs [out.vsix]     default: extension/loadout.vsix
+//   node extension/build.mjs [out.vsix]     default: extension/fuseway.vsix
 import { crc32 } from 'node:zlib';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
@@ -11,9 +11,9 @@ const pkg = JSON.parse(readFileSync(join(DIR, 'package.json'), 'utf8'));
 const out = process.argv[2] || join(DIR, `${pkg.name}.vsix`);
 const REPO = join(DIR, '..');
 const SHIP = ['package.json', 'extension.js', 'router.js', 'rules.json', 'learner.js', 'route-cases.json', 'README.md'];
-// The loadout CLI and everything `loadout init` installs, at the same paths as in the repo, so the bundled CLI
+// The fuseway CLI and everything `fuseway init` installs, at the same paths as in the repo, so the bundled CLI
 // finds them next to itself.
-const BUNDLE = ['bin/loadout.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',
+const BUNDLE = ['bin/fuseway.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',
   '.agents/tasks/refresh-context.md', '.agents/skills', 'local-llm/models.json', 'local-llm/bench.sh'];
 const walk = (rel) => (statSync(join(REPO, rel)).isDirectory()
   ? readdirSync(join(REPO, rel)).flatMap((f) => walk(join(rel, f))) : [rel.split(sep).join('/')]);

@@ -1,8 +1,8 @@
 {
-  "name": "loadout",
-  "publisher": "loadout",
-  "displayName": "Loadout",
-  "description": "@loadout chat participant: routes each request to the local model, Claude Code or Codex, and spends subscription quota only when needed.",
+  "name": "fuseway",
+  "publisher": "griffinseibold",
+  "displayName": "Fuseway",
+  "description": "@fuseway chat participant: routes each request to the local model, Claude Code or Codex, and spends subscription quota only when needed.",
   "version": "0.3.0",
   "engines": {
     "vscode": "^1.100.0"
@@ -14,9 +14,9 @@
   "contributes": {
     "chatParticipants": [
       {
-        "id": "loadout.router",
-        "name": "loadout",
-        "fullName": "Loadout",
+        "id": "fuseway.router",
+        "name": "fuseway",
+        "fullName": "Fuseway",
         "description": "Picks the local model, Claude or Codex for each request",
         "isSticky": true,
         "commands": [
@@ -34,7 +34,7 @@
           },
           {
             "name": "usage",
-            "description": "Show subscription windows and loadout's recent calls"
+            "description": "Show subscription windows and fuseway's recent calls"
           },
           {
             "name": "stats",
@@ -44,14 +44,14 @@
       }
     ],
     "configuration": {
-      "title": "Loadout",
+      "title": "Fuseway",
       "properties": {
-        "loadout.allowEdits": {
+        "fuseway.allowEdits": {
           "type": "boolean",
           "default": true,
           "description": "Let backends edit files in the workspace. Off: Claude runs in plan mode and Codex read-only."
         },
-        "loadout.claudeModel": {
+        "fuseway.claudeModel": {
           "type": "string",
           "enum": [
             "sonnet",
@@ -61,7 +61,7 @@
           "default": "sonnet",
           "description": "Claude model for frontier work."
         },
-        "loadout.codexEffort": {
+        "fuseway.codexEffort": {
           "type": "string",
           "enum": [
             "low",
@@ -71,7 +71,7 @@
           "default": "medium",
           "description": "Codex reasoning effort for frontier work."
         },
-        "loadout.frontier": {
+        "fuseway.frontier": {
           "type": "string",
           "enum": [
             "balance",
@@ -81,26 +81,26 @@
           "default": "balance",
           "description": "balance: send frontier work to whichever subscription has more room left after its reserve, counting both its 5-hour and weekly windows."
         },
-        "loadout.claudeReserve": {
+        "fuseway.claudeReserve": {
           "type": "number",
           "minimum": 0,
           "maximum": 0.9,
           "default": 0.2,
-          "description": "Share of Claude's 5-hour and weekly windows kept for your own Claude Code sessions. Headless calls share those windows with you; once only this much is left, @loadout sends frontier work to Codex."
+          "description": "Share of Claude's 5-hour and weekly windows kept for your own Claude Code sessions. Headless calls share those windows with you; once only this much is left, @fuseway sends frontier work to Codex."
         },
-        "loadout.codexReserve": {
+        "fuseway.codexReserve": {
           "type": "number",
           "minimum": 0,
           "maximum": 0.9,
           "default": 0,
           "description": "Share of Codex's windows kept for your own Codex sessions."
         },
-        "loadout.learning.enabled": {
+        "fuseway.learning.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Score routers and agents from outcomes in the background, and switch to a better decision maker when the evidence is clear. Everything stays in ~/.local/state/loadout/learning.jsonl on this machine."
+          "description": "Score routers and agents from outcomes in the background, and switch to a better decision maker when the evidence is clear. Everything stays in ~/.local/state/fuseway/learning.jsonl on this machine."
         },
-        "loadout.learning.dailyPaidTokens": {
+        "fuseway.learning.dailyPaidTokens": {
           "type": "number",
           "default": 20000,
           "minimum": 0,
@@ -110,20 +110,24 @@
     },
     "commands": [
       {
-        "command": "loadout.checkSetup",
+        "command": "fuseway.checkSetup",
         "title": "Check Setup",
-        "category": "Loadout"
+        "category": "Fuseway"
       },
       {
-        "command": "loadout.setUpModel",
+        "command": "fuseway.setUpModel",
         "title": "Set Up Local Model",
-        "category": "Loadout"
+        "category": "Fuseway"
       },
       {
-        "command": "loadout.addToRepo",
+        "command": "fuseway.addToRepo",
         "title": "Add to This Repo",
-        "category": "Loadout"
+        "category": "Fuseway"
       }
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/griffinseibold/fuseway"
   }
 }

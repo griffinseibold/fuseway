@@ -1,4 +1,4 @@
-// Routing and backends for the @loadout chat participant. No vscode imports, so node --test can run it.
+// Routing and backends for the @fuseway chat participant. No vscode imports, so node --test can run it.
 //
 // Per request: deterministic rules decide what they can (applyRules). Otherwise the local model matches the request
 // against the rule catalog (rules.json) by meaning (free); see classify for how matches decide, and when Haiku confirms (~1K tokens). Frontier work goes to whichever of Claude and Codex has
@@ -9,10 +9,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const STATE = path.join(os.homedir(), '.local', 'state', 'loadout');
+const STATE = path.join(os.homedir(), '.local', 'state', 'fuseway');
 const USAGE_LOG = path.join(STATE, 'usage.jsonl');
 const CLAUDE_LIMITS = path.join(STATE, 'claude-limits.json');
-const LOCAL_CONFIG = path.join(os.homedir(), '.config', 'loadout', 'local.json');
+const LOCAL_CONFIG = path.join(os.homedir(), '.config', 'fuseway', 'local.json');
 const CODEX_SESSIONS = path.join(os.homedir(), '.codex', 'sessions');
 const LIMIT_ERROR = /usage limit|rate limit|limit reached|quota|\b429\b/i;
 
@@ -122,7 +122,7 @@ function routerInput(prompt, previousPrompt) {
 
 async function askQwen(input, catalog) {
   const local = readJson(LOCAL_CONFIG, null);
-  if (!local) throw new Error('no local model configured (run `loadout model`)');
+  if (!local) throw new Error('no local model configured (run `fuseway model`)');
   const res = await fetch(`${local.url}/chat/completions`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(30_000),
     body: JSON.stringify({ model: local.model, max_tokens: 150, temperature: 0, cache_prompt: true,
@@ -137,7 +137,7 @@ async function askQwen(input, catalog) {
 
 async function askHaiku(input, hint) {
   // Run outside any repo with a one-line system prompt and no tools: ~1K tokens instead of ~38K.
-  const cwd = path.join(os.tmpdir(), 'loadout-router');
+  const cwd = path.join(os.tmpdir(), 'fuseway-router');
   fs.mkdirSync(cwd, { recursive: true });
   const prompt = hint ? `${input}\n\n(A routing rule that might apply: ${hint})` : input;
   const { out } = await spawnCli(CLAUDE, ['-p', prompt, '--model', 'haiku', '--system-prompt', HAIKU_SYSTEM, '--tools', '',
@@ -402,7 +402,7 @@ async function runClaude({ prompt, cwd, sessionId, allowEdits, claudeModel = 'so
 async function runCodex(backend, { prompt, cwd, sessionId, allowEdits, codexEffort = 'medium', onProgress, signal }) {
   const s = codexState();
   const local = backend === 'local' ? readJson(LOCAL_CONFIG, null) : null;
-  if (backend === 'local' && !local) throw new BackendError('No local model configured: run `loadout model`.', false);
+  if (backend === 'local' && !local) throw new BackendError('No local model configured: run `fuseway model`.', false);
   // Options go before `resume`: the resume subcommand has no --profile or --sandbox of its own.
   const args = ['exec', ...(local ? ['--profile', 'local'] : ['-c', `model_reasoning_effort="${codexEffort}"`]),
     '--json', '--skip-git-repo-check', '--sandbox', allowEdits ? 'workspace-write' : 'read-only',
@@ -458,7 +458,7 @@ function usageMarkdown(hours = 5, now = Date.now()) {
   const limits = readLimits();
   const win = (w) => (!w ? 'no reading yet' : w.resetsAt * 1000 < now ? 'no current reading (the last window has reset)' : `${Math.round(w.used * 100)}% of 5h used (resets ${new Date(w.resetsAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})${w.weekUsed !== undefined ? `, ${Math.round(w.weekUsed * 100)}% of week` : ''}`);
   return [`**Subscription windows**`, `- Claude: ${win(limits.claude)}`, `- Codex: ${win(limits.codex)}`, '',
-    `**loadout calls, last ${hours} h**`, '', '| | calls | failed | tokens in | tokens out |', '|---|---|---|---|---|',
+    `**fuseway calls, last ${hours} h**`, '', '| | calls | failed | tokens in | tokens out |', '|---|---|---|---|---|',
     ...Object.entries(rows).map(([b, r]) => `| ${b} | ${r.calls} | ${r.failed} | ${k(r.in)} | ${k(r.out)} |`)].join('\n');
 }
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "Routing rules for @loadout. frontier: needs Claude or Codex. local: the local model can do it. Keywords match whole words; one ending in * is a stem (\"migrat*\" matches \"migration\"); only frontier keywords decide without a model, so keep them to words that nearly always mean risk (a topic word like \"backup\" is not one). Every rule's description is also shown to the local model, which reports which rules a request is related to, even loosely. A repo adds rules or disables these in .agents/routing.json.",
+  "_comment": "Routing rules for @fuseway. frontier: needs Claude or Codex. local: the local model can do it. Keywords match whole words; one ending in * is a stem (\"migrat*\" matches \"migration\"); only frontier keywords decide without a model, so keep them to words that nearly always mean risk (a topic word like \"backup\" is not one). Every rule's description is also shown to the local model, which reports which rules a request is related to, even loosely. A repo adds rules or disables these in .agents/routing.json.",
   "rules": [
     {
       "id": "authentication",

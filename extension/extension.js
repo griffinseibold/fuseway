@@ -1,16 +1,21 @@
-// @loadout: a chat participant that picks the cheapest capable backend per request. Logic lives in router.js.
-// The VSIX also carries the loadout CLI (bin/loadout.mjs), run with VS Code's own Node, for setup commands.
+// @fuseway: a chat participant that picks the cheapest capable backend per request. Logic lives in router.js.
+// The VSIX also carries the fuseway CLI (bin/fuseway.mjs), run with VS Code's own Node, for setup commands.
 const vscode = require('vscode');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Fuseway was called loadout: move this machine's old config and state once, before router and learner read them.
+for (const d of ['.config', path.join('.local', 'state')]) {
+  const from = path.join(os.homedir(), d, 'loadout'), to = path.join(os.homedir(), d, 'fuseway');
+  if (fs.existsSync(from) && !fs.existsSync(to)) { try { fs.renameSync(from, to); } catch {} }
+}
 const r = require('./router');
 const L = require('./learner');
 
 const FORCED = ['local', 'claude', 'codex'];
-const ROOT = fs.existsSync(path.join(__dirname, 'bin', 'loadout.mjs')) ? __dirname : path.join(__dirname, '..');
-const CLI = path.join(ROOT, 'bin', 'loadout.mjs');
+const ROOT = fs.existsSync(path.join(__dirname, 'bin', 'fuseway.mjs')) ? __dirname : path.join(__dirname, '..');
+const CLI = path.join(ROOT, 'bin', 'fuseway.mjs');
 const k = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
 let output;
 
@@ -56,7 +61,7 @@ function resolvePrevious(prev, prompt, command) {
 }
 
 async function handle(request, context, stream, token) {
-  const c = vscode.workspace.getConfiguration('loadout');
+  const c = vscode.workspace.getConfiguration('fuseway');
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
   if (request.command === 'usage') { stream.markdown(r.usageMarkdown()); return {}; }
   const local = r.localConfig();
@@ -131,12 +136,12 @@ let learnTimer = null, learning = false;
 function reconsider() {
   const pick = L.reconsider(r.localConfig()?.model);
   if (pick.switched) {
-    output.appendLine(`Loadout: decision maker is now ${pick.key} (${pick.reason})`);
-    vscode.window.setStatusBarMessage(`Loadout: decision maker is now ${pick.key}`, 15_000);
+    output.appendLine(`Fuseway: decision maker is now ${pick.key} (${pick.reason})`);
+    vscode.window.setStatusBarMessage(`Fuseway: decision maker is now ${pick.key}`, 15_000);
   }
 }
 function learnSoon() {
-  const c = vscode.workspace.getConfiguration('loadout');
+  const c = vscode.workspace.getConfiguration('fuseway');
   if (!c.get('learning.enabled', true)) return;
   clearTimeout(learnTimer);
   learnTimer = setTimeout(async () => {
@@ -148,15 +153,15 @@ function learnSoon() {
       await L.tick({ classifyWith: r.classifyWith, offline: r.offline, localModel: local?.model, budget: c.get('learning.dailyPaidTokens', 20_000),
         ctx: (prompt) => ({ prompt, rules: r.loadRules(cwd), localContext: local?.contextWindow }), isBusy: () => busy > 0 });
       reconsider();
-    } catch (e) { output.appendLine(`Loadout learner: ${e.message}`); }
+    } catch (e) { output.appendLine(`Fuseway learner: ${e.message}`); }
     finally { learning = false; }
   }, 5_000);
 }
 
-// Runs the bundled loadout CLI with VS Code's own Node, so setup needs no separate install.
+// Runs the bundled fuseway CLI with VS Code's own Node, so setup needs no separate install.
 function cli(args, { show = true } = {}) {
   return new Promise((resolve) => {
-    if (show) { output.show(true); output.appendLine(`$ loadout ${args.join(' ')}`); }
+    if (show) { output.show(true); output.appendLine(`$ fuseway ${args.join(' ')}`); }
     const child = spawn(process.execPath, [CLI, ...args], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
     let out = '';
     const take = (d) => { out += d; if (show) output.append(String(d)); };
@@ -166,39 +171,39 @@ function cli(args, { show = true } = {}) {
   });
 }
 
-// Runs setup commands where the user can watch and answer prompts. "loadout …" means the bundled CLI, run with
+// Runs setup commands where the user can watch and answer prompts. "fuseway …" means the bundled CLI, run with
 // VS Code's own Node (ELECTRON_RUN_AS_NODE makes the VS Code binary behave as Node; it doesn't affect claude or codex).
 function inTerminal(commands) {
   const self = `${process.platform === 'win32' ? '& ' : ''}"${process.execPath}" "${CLI}"`;
-  const term = vscode.window.createTerminal({ name: 'Loadout setup', env: { ELECTRON_RUN_AS_NODE: '1' } });
+  const term = vscode.window.createTerminal({ name: 'Fuseway setup', env: { ELECTRON_RUN_AS_NODE: '1' } });
   term.show();
-  for (const c of commands) term.sendText(c.replace(/^loadout\b/, self));
+  for (const c of commands) term.sendText(c.replace(/^fuseway\b/, self));
 }
 
 async function startupCheck(ctx) {
-  if (ctx.globalState.get('loadout.quietSetup')) return;
+  if (ctx.globalState.get('fuseway.quietSetup')) return;
   const { out } = await cli(['doctor', '--json'], { show: false });
   let results = [];
   try { results = JSON.parse(out); } catch { return; }
   const todo = results.filter((x) => !x.ok && !x.optional);
   if (!todo.length) return;
   const runnable = [...new Set(todo.map((x) => x.run).filter(Boolean))];
-  const pick = await vscode.window.showWarningMessage(`Loadout: ${todo.map((x) => x.name).join(', ')} need${todo.length === 1 ? 's' : ''} setting up.`,
+  const pick = await vscode.window.showWarningMessage(`Fuseway: ${todo.map((x) => x.name).join(', ')} need${todo.length === 1 ? 's' : ''} setting up.`,
     ...(runnable.length ? ['Set Up'] : []), 'Show Details', "Don't Ask Again");
-  if (pick === "Don't Ask Again") return ctx.globalState.update('loadout.quietSetup', true);
-  if (pick === 'Set Up') return inTerminal([...runnable, 'loadout doctor']);
+  if (pick === "Don't Ask Again") return ctx.globalState.update('fuseway.quietSetup', true);
+  if (pick === 'Set Up') return inTerminal([...runnable, 'fuseway doctor']);
   if (pick) await cli(['doctor']);
 }
 
 exports.activate = (ctx) => {
-  output = vscode.window.createOutputChannel('Loadout');
+  output = vscode.window.createOutputChannel('Fuseway');
   const id = require('./package.json').contributes.chatParticipants[0].id;
   const participant = vscode.chat.createChatParticipant(id, async (request, context, stream, token) => {
     busy++;
     try {
       return await handle(request, context, stream, token);
     } catch (e) {
-      stream.markdown(`**loadout:** ${e.message}`);
+      stream.markdown(`**fuseway:** ${e.message}`);
       return { errorDetails: { message: e.message } };
     } finally {
       busy--;
@@ -215,14 +220,14 @@ exports.activate = (ctx) => {
   });
   const folder = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   ctx.subscriptions.push(participant, output,
-    vscode.commands.registerCommand('loadout.checkSetup', () => cli(['doctor'])),
-    vscode.commands.registerCommand('loadout.setUpModel', () => inTerminal(['loadout model --install'])),
-    vscode.commands.registerCommand('loadout.addToRepo', async () => {
-      if (!folder()) return vscode.window.showErrorMessage('Loadout: open a folder first.');
+    vscode.commands.registerCommand('fuseway.checkSetup', () => cli(['doctor'])),
+    vscode.commands.registerCommand('fuseway.setUpModel', () => inTerminal(['fuseway model --install'])),
+    vscode.commands.registerCommand('fuseway.addToRepo', async () => {
+      if (!folder()) return vscode.window.showErrorMessage('Fuseway: open a folder first.');
       const pick = await vscode.window.showQuickPick([
         { label: 'pstack', description: 'engineering playbooks, bundled (default)', value: 'pstack' },
         { label: 'Superpowers', description: 'obra/superpowers, downloaded from GitHub', value: 'superpowers' },
-        { label: 'No skills', description: 'just the instructions, context cache and fusion', value: 'none' }], { title: 'Loadout: which skills?' });
+        { label: 'No skills', description: 'just the instructions, context cache and fusion', value: 'none' }], { title: 'Fuseway: which skills?' });
       if (pick) await cli(['init', folder(), '--skills', pick.value]);
     }));
   startupCheck(ctx);

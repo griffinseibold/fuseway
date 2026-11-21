@@ -1,15 +1,15 @@
 # AGENTS.md
 
-**Project:** loadout installs one shared agent setup (AGENTS.md, a context cache, pstack skills and the `fusion` MCP server) into any repo, and sets up each machine's local model, so Claude Code, Codex and Copilot share instructions and hand work to each other.
+**Project:** fuseway installs one shared agent setup (AGENTS.md, a context cache, pstack skills and the `fusion` MCP server) into any repo, and sets up each machine's local model, so Claude Code, Codex and Copilot share instructions and hand work to each other.
 
 ## Commands
 - Build: none (Node 22, no dependencies)
 - Test: `node --test test/*.test.mjs` (CLI), `node .agents/fusion/smoke.mjs` (fusion against the real backends; spends a little quota)
 - Routing accuracy: `node extension/route-eval.mjs` (real Qwen and Haiku; about 10K Claude tokens)
-- Lint/format: `node --check bin/loadout.mjs .agents/fusion/*.mjs extension/*.js && bash -n local-llm/bench.sh scripts/bootstrap.sh`
-- Files under `template/` and `.agents/fusion/` are what `loadout init` installs into other repos: change them with that in mind.
+- Lint/format: `node --check bin/fuseway.mjs .agents/fusion/*.mjs extension/*.js && bash -n local-llm/bench.sh scripts/bootstrap.sh`
+- Files under `template/` and `.agents/fusion/` are what `fuseway init` installs into other repos: change them with that in mind.
 
-<!-- loadout:begin -->
+<!-- fuseway:begin -->
 ## How to work
 1. **Local context first.** Read `.agents/context/index.md` before exploring the codebase or calling MCP servers or the web. When you learn something durable (how a subsystem works, a gotcha, a command), add it to `.agents/context/` and link it from the index. Keep entries short and in terms of concepts, not line numbers.
 2. **Smallest change that solves the problem.** No speculative abstractions or drive-by refactors.
@@ -27,7 +27,7 @@
 - From a chat, hand work across with the `fusion` MCP tools: `ask_local` first, `ask_claude` or `ask_codex` to escalate, `critique` only at checkpoints (a finished plan or final diff).
 - Use default reasoning effort. Use high effort only for planning and hard bugs.
 - A local-model agent that is stuck after two attempts stops and writes up what it tried in `.agents/context/handoff.md` for a frontier agent.
-<!-- loadout:end -->
+<!-- fuseway:end -->
 
 ## Parallel agents
 - One agent per git worktree: `git worktree add ../<repo>.worktrees/<task> -b <task>`. Never edit files outside your own worktree.

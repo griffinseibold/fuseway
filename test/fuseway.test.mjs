@@ -6,13 +6,13 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync, lstatS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const CLI = new URL('../bin/loadout.mjs', import.meta.url).pathname;
-const loadout = (...args) => {
+const CLI = new URL('../bin/fuseway.mjs', import.meta.url).pathname;
+const fuseway = (...args) => {
   const r = spawnSync('node', [CLI, ...args], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr || r.stdout);
   return r.stdout;
 };
-const repo = () => mkdtempSync(join(tmpdir(), 'loadout-test-'));
+const repo = () => mkdtempSync(join(tmpdir(), 'fuseway-test-'));
 const read = (dir, rel) => readFileSync(join(dir, rel), 'utf8');
 
 test('init keeps what an existing repo already has', () => {
@@ -21,7 +21,7 @@ test('init keeps what an existing repo already has', () => {
   writeFileSync(join(dir, 'CLAUDE.md'), 'Use pnpm.\n');
   writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { db: { command: 'db-mcp' } } }));
   writeFileSync(join(dir, '.gitignore'), 'dist/\n');
-  loadout('init', dir, '--no-pstack');
+  fuseway('init', dir, '--no-pstack');
 
   const agents = read(dir, 'AGENTS.md');
   assert.match(agents, /Never touch prod\./);
@@ -36,16 +36,16 @@ test('init keeps what an existing repo already has', () => {
 test('init twice changes nothing the second time', () => {
   const dir = repo();
   writeFileSync(join(dir, 'AGENTS.md'), '# Ours\n');
-  loadout('init', dir, '--no-pstack');
-  const second = loadout('init', dir, '--no-pstack');
+  fuseway('init', dir, '--no-pstack');
+  const second = fuseway('init', dir, '--no-pstack');
   const changed = second.split('\n').filter((l) => /^\s+(created|updated)\s/.test(l));
   assert.deepEqual(changed, []);
-  assert.equal(read(dir, 'AGENTS.md').split('<!-- loadout:begin -->').length, 2, 'exactly one loadout block');
+  assert.equal(read(dir, 'AGENTS.md').split('<!-- fuseway:begin -->').length, 2, 'exactly one fuseway block');
 });
 
 test('init in an empty repo starts from the template, with skills linked', () => {
   const dir = repo();
-  const out = loadout('init', dir);
+  const out = fuseway('init', dir);
   assert.match(read(dir, 'AGENTS.md'), /\*\*Project:\*\* _TODO/);
   assert.match(read(dir, 'CLAUDE.md'), /^@AGENTS\.md/);
   assert.ok(lstatSync(join(dir, '.claude/skills')).isSymbolicLink());
@@ -57,23 +57,23 @@ test('init leaves a commented .vscode/mcp.json alone and says what to add', () =
   const dir = repo();
   mkdirSync(join(dir, '.vscode'));
   writeFileSync(join(dir, '.vscode/mcp.json'), '{\n  // ours\n  "servers": {}\n}\n');
-  const out = loadout('init', dir, '--no-pstack');
+  const out = fuseway('init', dir, '--no-pstack');
   assert.match(read(dir, '.vscode/mcp.json'), /\/\/ ours/);
   assert.match(out, /skipped .*\.vscode\/mcp\.json|\.vscode\/mcp\.json.*skipped|skipped \(not plain JSON/);
 });
 
 test('model --recommend picks a tier from VRAM and RAM', () => {
-  const at = (vram, ram) => loadout('model', '--recommend', '--vram', String(vram), '--ram', String(ram));
+  const at = (vram, ram) => fuseway('model', '--recommend', '--vram', String(vram), '--ram', String(ram));
   assert.match(at(16, 48), /Qwen3\.6-35B-A3B-UD-IQ3_XXS[\s\S]*Measured: RX 6800/);
   assert.match(at(24, 64), /UD-IQ4_XS/);
   assert.match(at(12, 32), /IQ3_XXS[\s\S]*--n-cpu-moe 12/);
   assert.match(at(12, 16), /Qwen3-8B/);
   assert.match(at(4, 8), /no local model/);
-  assert.match(loadout('model', '--recommend', '--vram', '16', '--ram', '48', '--gpu', 'nvidia'), /--gpus all[\s\S]*server-cuda-b10731/);
+  assert.match(fuseway('model', '--recommend', '--vram', '16', '--ram', '48', '--gpu', 'nvidia'), /--gpus all[\s\S]*server-cuda-b10731/);
 });
 
 test('download resumes a partial file, verifies it, and rejects a corrupted one', async () => {
-  const { download } = await import('../bin/loadout.mjs');
+  const { download } = await import('../bin/fuseway.mjs');
   const { createServer } = await import('node:http');
   const { createHash } = await import('node:crypto');
   const body = Buffer.alloc(300_000, 7);
@@ -104,7 +104,7 @@ test('download resumes a partial file, verifies it, and rejects a corrupted one'
 });
 
 test('the server plan uses the right llama.cpp image and flags for each GPU', async () => {
-  const { serverPlan, dockerArgs } = await import('../bin/loadout.mjs');
+  const { serverPlan, dockerArgs } = await import('../bin/fuseway.mjs');
   const plan = (vendor, vramGiB, ramGiB = 48) => serverPlan({ gpu: vendor ? { vendor, vramGiB } : null, ramGiB });
   const amd = dockerArgs(plan('amd', 16));
   assert.ok(amd.includes('--device') && amd.some((a) => a.endsWith('server-vulkan-b10731')) && amd.includes('--jinja') && amd.includes('-ngl'));
@@ -113,4 +113,14 @@ test('the server plan uses the right llama.cpp image and flags for each GPU', as
   assert.equal(plan('apple', 20).native, true, 'Macs run llama.cpp natively');
   assert.equal(plan(null, 0).tier, null, 'no GPU: no local model');
   assert.ok(!dockerArgs(serverPlan({ gpu: { vendor: 'other', vramGiB: 16 }, ramGiB: 48 })).includes('-ngl'), 'unknown GPUs get no offload flag');
+});
+
+test('a repo set up under the old name (loadout) gets its section replaced, not duplicated', () => {
+  const dir = repo();
+  writeFileSync(join(dir, 'AGENTS.md'), '# Ours\n\n<!-- loadout:begin -->\nold text\n<!-- loadout:end -->\n\nKeep this.\n');
+  fuseway('init', dir, '--skills', 'none');
+  const agents = read(dir, 'AGENTS.md');
+  assert.doesNotMatch(agents, /loadout:begin|old text/);
+  assert.equal(agents.split('<!-- fuseway:begin -->').length, 2);
+  assert.match(agents, /Keep this\./);
 });

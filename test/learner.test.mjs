@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // The learner's log goes to a scratch file for these tests.
-process.env.LOADOUT_LEARNING_LOG = join(mkdtempSync(join(tmpdir(), 'loadout-learn-')), 'learning.jsonl');
+process.env.FUSEWAY_LEARNING_LOG = join(mkdtempSync(join(tmpdir(), 'fuseway-learn-')), 'learning.jsonl');
 const require = createRequire(import.meta.url);
 const L = require('../extension/learner.js');
 const R = require('../extension/router.js');
@@ -113,7 +113,7 @@ test('classifyWith runs each candidate and counts its paid tokens', async () => 
 });
 
 test('the background pass runs free routers always, paid ones within the budget, and stops when asked', async () => {
-  rmSync(process.env.LOADOUT_LEARNING_LOG, { force: true });
+  rmSync(process.env.FUSEWAY_LEARNING_LOG, { force: true });
   const now = Date.now();
   L.append({ type: 'decision', id: 'd1', ts: now - 60_000, prompt: 'add a docstring', local: true, routers: { 'cascade@q': 'local' } });
   const calls = [];
@@ -126,7 +126,7 @@ test('the background pass runs free routers always, paid ones within the budget,
   assert.ok(events.some((e) => e.type === 'bench' && e.key === 'local-only@q'), 'a thin free router gets test cases');
   assert.ok(!events.some((e) => e.type === 'bench' && e.key === 'haiku' && L.paidToday(events, now) > 1500), 'no paid test cases over budget');
 
-  rmSync(process.env.LOADOUT_LEARNING_LOG, { force: true });
+  rmSync(process.env.FUSEWAY_LEARNING_LOG, { force: true });
   calls.length = 0;
   await L.tick({ classifyWith, offline: () => false, localModel: 'q', budget: 0, now, isBusy: () => true });
   assert.equal(calls.length, 0, 'does nothing while a request is running');
@@ -135,7 +135,7 @@ test('the background pass runs free routers always, paid ones within the budget,
 });
 
 test('reconsider switches once there is clear recent evidence, and logs why', () => {
-  rmSync(process.env.LOADOUT_LEARNING_LOG, { force: true });
+  rmSync(process.env.FUSEWAY_LEARNING_LOG, { force: true });
   const now = Date.now();
   for (const e of [...history('cascade@q', { n: 30, right: 24, daysAgo: 0 }), ...history('local-only@q', { n: 30, right: 29, daysAgo: 0 })]) L.append({ ...e, ts: now - 1000 });
   const pick = L.reconsider('q', now);

@@ -1,10 +1,10 @@
 # fusion: one chat, many models
 
-An MCP server (`.agents/fusion/server.mjs`, Node 22, no dependencies; `loadout init` copies it into each repo) that lets whichever chat you're in hand work to other models. It calls the official CLIs headless, so each call spends that tool's flat-rate subscription instead of API credits.
+An MCP server (`.agents/fusion/server.mjs`, Node 22, no dependencies; `fuseway init` copies it into each repo) that lets whichever chat you're in hand work to other models. It calls the official CLIs headless, so each call spends that tool's flat-rate subscription instead of API credits.
 
 | Tool | Runs | Costs |
 |---|---|---|
-| `ask_local` | POST to `/chat/completions` on the machine's local model: `LOCAL_LLM_URL` if set, else `~/.config/loadout/local.json` (written by `loadout model`), else `localhost:8080` | Nothing. Has no file access, so the prompt must carry what it needs |
+| `ask_local` | POST to `/chat/completions` on the machine's local model: `LOCAL_LLM_URL` if set, else `~/.config/fuseway/local.json` (written by `fuseway model`), else `localhost:8080` | Nothing. Has no file access, so the prompt must carry what it needs |
 | `ask_claude` | `claude -p` in the workspace, default model `sonnet` | Claude subscription quota |
 | `ask_codex` | `codex exec`, default effort `medium` | ChatGPT subscription quota |
 | `critique` | Claude and Codex in parallel, read-only | Both |
@@ -19,7 +19,7 @@ An MCP server (`.agents/fusion/server.mjs`, Node 22, no dependencies; `loadout i
 ## Registered in
 - Copilot Chat: `.vscode/mcp.json`
 - Claude Code: `.mcp.json` (approve it when prompted)
-- Both are merged in by `loadout init`.
+- Both are merged in by `fuseway init`.
 - Codex: not registered. Add `[mcp_servers.fusion]` to `~/.codex/config.toml` if Codex becomes the main chat.
 
 ## Test

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// loadout: one agent setup for every repo, and one local model per machine.
-//   loadout init [dir] [--skills pstack|superpowers|none]   add the setup to a repo (default: here, with pstack); safe to rerun
-//   loadout model [--url URL] [--ctx N]  find, check and configure this machine's local model server
-//   loadout model --recommend [--vram GiB] [--ram GiB]   recommend a model for this (or a hypothetical) machine
-//   loadout model --install [--yes] [--dry-run]           use a running server, or download and start the recommended one
-//   loadout extension                    build and install the @loadout VS Code chat participant
-//   loadout setup                        one-time machine setup: PATH, local model, extension, then doctor
-//   loadout doctor [--json]              check the CLIs, their sign-ins and the local model
+// fuseway: one agent setup for every repo, and one local model per machine.
+//   fuseway init [dir] [--skills pstack|superpowers|none]   add the setup to a repo (default: here, with pstack); safe to rerun
+//   fuseway model [--url URL] [--ctx N]  find, check and configure this machine's local model server
+//   fuseway model --recommend [--vram GiB] [--ram GiB]   recommend a model for this (or a hypothetical) machine
+//   fuseway model --install [--yes] [--dry-run]           use a running server, or download and start the recommended one
+//   fuseway extension                    build and install the @fuseway VS Code chat participant
+//   fuseway setup                        one-time machine setup: PATH, local model, extension, then doctor
+//   fuseway doctor [--json]              check the CLIs, their sign-ins and the local model
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -16,14 +16,19 @@ import { homedir, platform, arch, tmpdir, totalmem } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const LOADOUT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const LOCAL_CONFIG = join(homedir(), '.config', 'loadout', 'local.json');
-const BEGIN = '<!-- loadout:begin -->';
-const END = '<!-- loadout:end -->';
-const MANAGED = '# managed by loadout: rerun `loadout model` to update';
+const FUSEWAY = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const LOCAL_CONFIG = join(homedir(), '.config', 'fuseway', 'local.json');
+const BEGIN = '<!-- fuseway:begin -->';
+const END = '<!-- fuseway:end -->';
+const MANAGED = '# managed by fuseway: rerun `fuseway model` to update';
+// Fuseway was called loadout. Old markers and files are still recognized, and old config and state move once.
+const LEGACY = { begin: '<!-- loadout:begin -->', end: '<!-- loadout:end -->', managed: '# managed by loadout', group: 'Loadout local' };
+for (const [from, to] of [['.config', 'loadout', 'fuseway'], ['.local/state', 'loadout', 'fuseway']].map(([d, a, b]) => [join(homedir(), d, a), join(homedir(), d, b)])) {
+  if (existsSync(from) && !existsSync(to)) { try { renameSync(from, to); } catch {} }
+}
 
 const read = (p) => readFileSync(p, 'utf8');
-const template = (name) => read(join(LOADOUT, 'template', name));
+const template = (name) => read(join(FUSEWAY, 'template', name));
 // On Windows, commands are found with one of PATHEXT's extensions (claude.cmd, codex.exe).
 const EXTS = platform() === 'win32' ? ['', ...(process.env.PATHEXT || '.EXE;.CMD;.BAT').toLowerCase().split(';')] : [''];
 const which = (name) => (process.env.PATH || '').split(delimiter).flatMap((d) => EXTS.map((e) => join(d, name + e))).find(existsSync);
@@ -44,12 +49,14 @@ function writeFile(root, rel, content) {
 
 function withBlock(text, block) {
   const wrapped = `${BEGIN}\n${block.trim()}\n${END}`;
-  const i = text.indexOf(BEGIN), j = text.indexOf(END);
-  if (i >= 0 && j > i) return text.slice(0, i) + wrapped + text.slice(j + END.length);
+  for (const [b, e] of [[BEGIN, END], [LEGACY.begin, LEGACY.end]]) {
+    const i = text.indexOf(b), j = text.indexOf(e);
+    if (i >= 0 && j > i) return text.slice(0, i) + wrapped + text.slice(j + e.length);
+  }
   return text.trim() ? `${text.replace(/\s*$/, '')}\n\n${wrapped}\n` : `${wrapped}\n`;
 }
 
-// Puts `block` between loadout markers in an existing file; a new file gets `fresh`, or just the block.
+// Puts `block` between fuseway markers in an existing file; a new file gets `fresh`, or just the block.
 function upsert(root, rel, block, fresh) {
   const path = join(root, rel);
   writeFile(root, rel, existsSync(path) ? withBlock(read(path), block) : fresh ?? withBlock('', block));
@@ -67,8 +74,8 @@ function mergeJson(root, rel, merge) {
 }
 
 function copyOwned(root, rel) {
-  if (resolve(root) === LOADOUT) return report(rel, 'unchanged');
-  writeFile(root, rel, read(join(LOADOUT, rel)));
+  if (resolve(root) === FUSEWAY) return report(rel, 'unchanged');
+  writeFile(root, rel, read(join(FUSEWAY, rel)));
 }
 
 function linkSkills(root, rel) {
@@ -83,10 +90,10 @@ function linkSkills(root, rel) {
 function init(args) {
   const root = resolve(args.positional[0] || '.');
   if (!existsSync(root)) throw new Error(`No such directory: ${root}`);
-  console.log(`loadout init ${root}`);
+  console.log(`fuseway init ${root}`);
   const block = template('agents-block.md');
 
-  upsert(root, 'AGENTS.md', block, template('AGENTS.md').replace('{{LOADOUT_BLOCK}}', `${BEGIN}\n${block.trim()}\n${END}`));
+  upsert(root, 'AGENTS.md', block, template('AGENTS.md').replace('{{FUSEWAY_BLOCK}}', `${BEGIN}\n${block.trim()}\n${END}`));
   const claude = join(root, 'CLAUDE.md');
   if (existsSync(claude) && /^@AGENTS\.md\s*$/m.test(read(claude))) report('CLAUDE.md', 'unchanged');
   else upsert(root, 'CLAUDE.md', '@AGENTS.md', template('CLAUDE.md'));
@@ -94,27 +101,27 @@ function init(args) {
   if (existsSync(join(root, '.agents/context/index.md'))) report('.agents/context/index.md', 'unchanged');
   else writeFile(root, '.agents/context/index.md', template('context-index.md'));
 
-  // Repo-owned: extra routing rules for @loadout, added to its defaults (see .agents/context/extension.md in loadout).
+  // Repo-owned: extra routing rules for @fuseway, added to its defaults (see .agents/context/extension.md in fuseway).
   if (existsSync(join(root, '.agents/routing.json'))) report('.agents/routing.json', 'unchanged');
   else writeFile(root, '.agents/routing.json', JSON.stringify({ frontierPaths: [], frontierKeywords: [], localKeywords: [] }, null, 2) + '\n');
 
   for (const rel of ['.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs', '.agents/tasks/refresh-context.md']) copyOwned(root, rel);
 
-  // Skills: pstack ships with loadout (works offline); Superpowers (obra/superpowers, MIT) is cloned at install time.
+  // Skills: pstack ships with fuseway (works offline); Superpowers (obra/superpowers, MIT) is cloned at install time.
   const skills = args.flags['no-pstack'] ? 'none' : args.flags.skills || 'pstack';
   if (!['pstack', 'superpowers', 'none'].includes(skills)) throw new Error(`--skills must be pstack, superpowers or none, not ${skills}`);
   if (skills !== 'none') {
     const stamp = skills === 'pstack' ? 'PSTACK_VERSION' : 'SUPERPOWERS_VERSION';
     const before = existsSync(join(root, '.agents/skills', stamp)) ? read(join(root, '.agents/skills', stamp)) : null;
-    let src = join(LOADOUT, '.agents/skills'), version, tmp;
+    let src = join(FUSEWAY, '.agents/skills'), version, tmp;
     if (skills === 'superpowers') {
-      tmp = join(tmpdir(), `loadout-superpowers-${process.pid}`);
+      tmp = join(tmpdir(), `fuseway-superpowers-${process.pid}`);
       const clone = spawnSync('git', ['clone', '--depth', '1', '--quiet', 'https://github.com/obra/superpowers.git', tmp], { encoding: 'utf8' });
       if (clone.status !== 0) throw new Error(`couldn't clone Superpowers: ${(clone.stderr || '').trim() || 'is git installed and are you online?'}`);
       src = join(tmp, 'skills');
       version = spawnSync('git', ['-C', tmp, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim() + '\n';
     } else version = read(join(src, 'PSTACK_VERSION'));
-    if (resolve(root) === LOADOUT && skills === 'pstack') report('.agents/skills/', 'unchanged');
+    if (resolve(root) === FUSEWAY && skills === 'pstack') report('.agents/skills/', 'unchanged');
     else {
       cpSync(src, join(root, '.agents/skills'), { recursive: true });
       if (skills === 'superpowers') {
@@ -146,7 +153,7 @@ function init(args) {
   console.log('\nThis machine:');
   console.log(`  claude     ${which('claude') || 'not found: fusion ask_claude will fail'}`);
   console.log(`  codex      ${which('codex') || (existsSync('/usr/lib/chatgpt/resources/codex') ? '/usr/lib/chatgpt/resources/codex (ChatGPT app)' : 'not found: fusion ask_codex will fail')}`);
-  console.log(`  local LLM  ${existsSync(LOCAL_CONFIG) ? JSON.parse(read(LOCAL_CONFIG)).url : 'not configured: run `loadout model`'}`);
+  console.log(`  local LLM  ${existsSync(LOCAL_CONFIG) ? JSON.parse(read(LOCAL_CONFIG)).url : 'not configured: run `fuseway model`'}`);
   if (/_TODO: one sentence\._/.test(read(join(root, 'AGENTS.md')))) console.log('\nNext: fill in the Project and Commands sections of AGENTS.md.');
 }
 
@@ -216,7 +223,7 @@ function hardware(overrides) {
 
 // What to run for this hardware: { hw, tier, image, gpuArgs, serverArgs, native } or { hw, tier: null }.
 function serverPlan(hw) {
-  const { tiers, llamaCppBuild } = JSON.parse(read(join(LOADOUT, 'local-llm/models.json')));
+  const { tiers, llamaCppBuild } = JSON.parse(read(join(FUSEWAY, 'local-llm/models.json')));
   const vram = hw.gpu?.vramGiB || 0;
   const tier = tiers.find((t) => vram >= t.minVramGiB && hw.ramGiB >= (t.minRamGiB || 0));
   if (!tier) return { hw, tier: null };
@@ -227,7 +234,7 @@ function serverPlan(hw) {
   return { hw, tier, native: vendor === 'apple', image: `ghcr.io/ggml-org/llama.cpp:${image}-${llamaCppBuild}`, gpuArgs, serverArgs };
 }
 
-const CONTAINER = 'loadout-llm';
+const CONTAINER = 'fuseway-llm';
 const dockerArgs = (p) => ['run', '-d', '--name', CONTAINER, '--restart', 'unless-stopped', ...p.gpuArgs, '-v', `${MODELS_DIR}:/models:ro`,
   '-p', '127.0.0.1:8080:8080', p.image, '-m', `/models/${p.tier.file}`, ...p.serverArgs, '--host', '0.0.0.0', '--port', '8080'];
 
@@ -258,8 +265,8 @@ function recommend(hw) {
   console.log('\n2. Run (one server per GPU; stop any other model server first):');
   if (p.native) console.log(`   brew install llama.cpp\n   llama-server -m ~/models/${tier.file} ${p.serverArgs.join(' ')} --port 8080`);
   else console.log(`   docker ${dockerArgs(p).join(' ').replace(MODELS_DIR, '~/models')}`);
-  console.log('\n3. Configure every tool for it:\n   loadout model --url http://localhost:8080/v1');
-  console.log('\nOr do all three: loadout model --install');
+  console.log('\n3. Configure every tool for it:\n   fuseway model --url http://localhost:8080/v1');
+  console.log('\nOr do all three: fuseway model --install');
 }
 
 const fileSha = (path) => new Promise((resolve, reject) => {
@@ -320,7 +327,7 @@ async function install(flags) {
   if (!p.tier) return;
   const dest = join(MODELS_DIR, p.tier.file);
   if (p.native) {
-    console.log(`\nOn a Mac, Docker can't reach the GPU, so run llama.cpp natively:\n  brew install llama.cpp\n  llama-server -m ${dest} ${p.serverArgs.join(' ')} --port 8080\nthen: loadout model`);
+    console.log(`\nOn a Mac, Docker can't reach the GPU, so run llama.cpp natively:\n  brew install llama.cpp\n  llama-server -m ${dest} ${p.serverArgs.join(' ')} --port 8080\nthen: fuseway model`);
     if (!existsSync(dest) && await confirm(`\nDownload the model now (${p.tier.sizeGB} GB to ~/models)?`, flags)) await download(p.tier.url, dest, p.tier.sha256);
     return;
   }
@@ -353,9 +360,9 @@ function writeCodexProfile(local) {
   const dir = join(homedir(), '.codex');
   if (!existsSync(dir)) return console.log('  codex      skipped (~/.codex not found)');
   const path = join(dir, 'local.config.toml');
-  if (existsSync(path) && !read(path).includes(MANAGED)) return console.log(`  codex      skipped (${path} exists and is not managed by loadout)`);
-  writeFileSync(path, `${MANAGED}\n# Use with: codex --profile local\nmodel_provider = "loadout-local"\nmodel = ${JSON.stringify(local.model)}\n\n` +
-    `[model_providers.loadout-local]\nname = "Local model (loadout)"\nbase_url = ${JSON.stringify(local.url)}\nwire_api = "responses"\n`);
+  if (existsSync(path) && ![MANAGED, LEGACY.managed].some((m) => read(path).includes(m))) return console.log(`  codex      skipped (${path} exists and is not managed by fuseway)`);
+  writeFileSync(path, `${MANAGED}\n# Use with: codex --profile local\nmodel_provider = "fuseway-local"\nmodel = ${JSON.stringify(local.model)}\n\n` +
+    `[model_providers.fuseway-local]\nname = "Local model (fuseway)"\nbase_url = ${JSON.stringify(local.url)}\nwire_api = "responses"\n`);
   console.log(`  codex      ${path} (codex --profile local)`);
 }
 
@@ -370,10 +377,10 @@ function writeVsCodeModel(local) {
     if (existsSync(path)) {
       try { groups = JSON.parse(read(path)); } catch { console.log(`  vscode     skipped (${path} is not plain JSON)`); continue; }
     }
-    const group = { name: 'Loadout local', vendor: 'customendpoint', apiType: 'chat-completions', models: [{
+    const group = { name: 'Fuseway local', vendor: 'customendpoint', apiType: 'chat-completions', models: [{
       id: local.model, name: `${local.model} (local)`, url: local.url, toolCalling: local.toolCalling, vision: false,
       thinking: true, contextWindow: local.contextWindow, maxOutputTokens: local.maxOutputTokens }] };
-    writeFileSync(path, JSON.stringify([...groups.filter((g) => g.name !== 'Loadout local'), group], null, 2) + '\n');
+    writeFileSync(path, JSON.stringify([...groups.filter((g) => g.name !== 'Fuseway local' && g.name !== LEGACY.group), group], null, 2) + '\n');
     console.log(`  vscode     ${path} (model picker: ${group.models[0].name})`);
   }
 }
@@ -396,7 +403,7 @@ async function model(args) {
       if (found && !url) { url = candidate; models = found; }
     }
     if (!url) {
-      console.log('\nNo server found. If you have one elsewhere, run: loadout model --url http://host:port/v1\n');
+      console.log('\nNo server found. If you have one elsewhere, run: fuseway model --url http://host:port/v1\n');
       return recommend(hardware(f));
     }
   }
@@ -415,7 +422,7 @@ async function model(args) {
   mkdirSync(dirname(LOCAL_CONFIG), { recursive: true });
   writeFileSync(LOCAL_CONFIG, JSON.stringify(local, null, 2) + '\n');
   console.log('\nConfigured:');
-  console.log(`  loadout    ${LOCAL_CONFIG} (fusion ask_local reads this)`);
+  console.log(`  fuseway    ${LOCAL_CONFIG} (fusion ask_local reads this)`);
   writeCodexProfile(local);
   writeVsCodeModel(local);
 }
@@ -423,13 +430,13 @@ async function model(args) {
 // ---------- extension ----------
 
 function extension() {
-  const vsix = join(LOADOUT, 'extension', 'loadout.vsix');
-  execFileSync(process.execPath, [join(LOADOUT, 'extension', 'build.mjs'), vsix], { stdio: 'inherit' });
+  const vsix = join(FUSEWAY, 'extension', 'fuseway.vsix');
+  execFileSync(process.execPath, [join(FUSEWAY, 'extension', 'build.mjs'), vsix], { stdio: 'inherit' });
   const code = which('code') || which('code-insiders');
   if (!code) return console.log(`VS Code CLI not found. Install ${vsix} with "Extensions: Install from VSIX…".`);
   execFileSync(code, ['--install-extension', vsix, '--force'], { stdio: ['ignore', 'inherit', 'ignore'] });
   console.log('Installed. A new install is ready right away; an update loads after "Developer: Reload Window".');
-  if (!existsSync(LOCAL_CONFIG)) console.log('No local model configured yet: run `loadout model` so @loadout can route to it.');
+  if (!existsSync(LOCAL_CONFIG)) console.log('No local model configured yet: run `fuseway model` so @fuseway can route to it.');
 }
 
 // ---------- doctor and setup ----------
@@ -467,14 +474,14 @@ async function checks() {
   }
 
   const local = existsSync(LOCAL_CONFIG) ? JSON.parse(read(LOCAL_CONFIG)) : null;
-  if (!local) add('Local model', false, 'not configured', 'loadout model --install (or "Loadout: Set Up Local Model" in VS Code)', 'loadout model --install');
+  if (!local) add('Local model', false, 'not configured', 'fuseway model --install (or "Fuseway: Set Up Local Model" in VS Code)', 'fuseway model --install');
   else {
     const models = await listModels(local.url);
     add('Local model', !!models && local.toolCalling, models ? `${local.model} at ${local.url}${local.toolCalling ? '' : ', but tool calls failed'}` : `offline at ${local.url}`,
-      models ? 'serve it with tool calling on (llama-server needs --jinja), then loadout model' : 'start your model server (homelab: ./scripts/lab-mode.py llm --wait), or loadout model --install');
+      models ? 'serve it with tool calling on (llama-server needs --jinja), then fuseway model' : 'start your model server (homelab: ./scripts/lab-mode.py llm --wait), or fuseway model --install');
   }
   const profile = join(homedir(), '.codex', 'local.config.toml');
-  add('Codex local profile', existsSync(profile), existsSync(profile) ? profile : 'missing: @loadout runs local work through it', 'loadout model', local ? 'loadout model' : null);
+  add('Codex local profile', existsSync(profile), existsSync(profile) ? profile : 'missing: @fuseway runs local work through it', 'fuseway model', local ? 'fuseway model' : null);
 
   const nodeVersion = quiet('node', ['--version']);
   const major = Number((nodeVersion.out.match(/v(\d+)/) || [])[1] || 0);
@@ -492,19 +499,19 @@ async function doctor(args) {
 
 async function setup(args) {
   const bin = join(homedir(), '.local', 'bin');
-  const link = join(bin, 'loadout');
+  const link = join(bin, 'fuseway');
   console.log('1. Command');
-  if (existsSync(link) || which('loadout')) console.log(`  ok    loadout is on PATH (${which('loadout') || link})`);
-  else if ((process.env.PATH || '').split(delimiter).includes(bin)) { mkdirSync(bin, { recursive: true }); symlinkSync(join(LOADOUT, 'bin', 'loadout.mjs'), link); console.log(`  added ${link}`); }
-  else console.log(`  skip  ${bin} is not on PATH; run this CLI as node ${join(LOADOUT, 'bin', 'loadout.mjs')}`);
+  if (existsSync(link) || which('fuseway')) console.log(`  ok    fuseway is on PATH (${which('fuseway') || link})`);
+  else if ((process.env.PATH || '').split(delimiter).includes(bin)) { mkdirSync(bin, { recursive: true }); symlinkSync(join(FUSEWAY, 'bin', 'fuseway.mjs'), link); console.log(`  added ${link}`); }
+  else console.log(`  skip  ${bin} is not on PATH; run this CLI as node ${join(FUSEWAY, 'bin', 'fuseway.mjs')}`);
   console.log('\n2. Local model');
   await install(args.flags).catch((e) => console.log(`  ${e.message}`));
   console.log('\n3. VS Code extension');
-  if (existsSync(join(LOADOUT, 'extension', 'build.mjs'))) extension();
+  if (existsSync(join(FUSEWAY, 'extension', 'build.mjs'))) extension();
   else console.log('  ok    running from the installed extension');
   console.log('\n4. Check');
   await doctor({ flags: {} });
-  const fixable = (await checks()).filter((c) => !c.ok && c.run && !c.run.startsWith('loadout '));
+  const fixable = (await checks()).filter((c) => !c.ok && c.run && !c.run.startsWith('fuseway '));
   if (fixable.length && await confirm(`\nRun the ${fixable.length} fix${fixable.length > 1 ? 'es' : ''} above now?`, args.flags)) {
     for (const c of fixable) { console.log(`\n$ ${c.run}`); spawnSync(c.run, { shell: true, stdio: 'inherit' }); }
     await doctor({ flags: {} });
@@ -532,5 +539,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
     console.log(read(fileURLToPath(import.meta.url)).split('\n').slice(1).filter((l, i, a) => a.slice(0, i + 1).every((x) => x.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
     process.exit(cmd ? 2 : 0);
   }
-  try { await commands[cmd](parse(rest)); } catch (e) { console.error(`loadout ${cmd}: ${e.message}`); process.exit(1); }
+  try { await commands[cmd](parse(rest)); } catch (e) { console.error(`fuseway ${cmd}: ${e.message}`); process.exit(1); }
 }
