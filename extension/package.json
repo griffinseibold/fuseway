@@ -3,10 +3,14 @@
   "publisher": "loadout",
   "displayName": "Loadout",
   "description": "@loadout chat participant: routes each request to the local model, Claude Code or Codex, and spends subscription quota only when needed.",
-  "version": "0.1.0",
-  "engines": { "vscode": "^1.100.0" },
+  "version": "0.2.0",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
   "main": "./extension.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "chatParticipants": [
       {
@@ -16,21 +20,81 @@
         "description": "Picks the local model, Claude or Codex for each request",
         "isSticky": true,
         "commands": [
-          { "name": "local", "description": "Use the local model (free)" },
-          { "name": "claude", "description": "Use Claude Code (Claude subscription)" },
-          { "name": "codex", "description": "Use Codex (ChatGPT subscription)" },
-          { "name": "usage", "description": "Show subscription windows and loadout's recent calls" }
+          {
+            "name": "local",
+            "description": "Use the local model (free)"
+          },
+          {
+            "name": "claude",
+            "description": "Use Claude Code (Claude subscription)"
+          },
+          {
+            "name": "codex",
+            "description": "Use Codex (ChatGPT subscription)"
+          },
+          {
+            "name": "usage",
+            "description": "Show subscription windows and loadout's recent calls"
+          }
         ]
       }
     ],
     "configuration": {
       "title": "Loadout",
       "properties": {
-        "loadout.allowEdits": { "type": "boolean", "default": true, "description": "Let backends edit files in the workspace. Off: Claude runs in plan mode and Codex read-only." },
-        "loadout.claudeModel": { "type": "string", "enum": ["sonnet", "opus", "haiku"], "default": "sonnet", "description": "Claude model for frontier work." },
-        "loadout.codexEffort": { "type": "string", "enum": ["low", "medium", "high"], "default": "medium", "description": "Codex reasoning effort for frontier work." },
-        "loadout.frontier": { "type": "string", "enum": ["balance", "claude", "codex"], "default": "balance", "description": "balance: send frontier work to whichever subscription has more of its 5-hour window left." }
+        "loadout.allowEdits": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let backends edit files in the workspace. Off: Claude runs in plan mode and Codex read-only."
+        },
+        "loadout.claudeModel": {
+          "type": "string",
+          "enum": [
+            "sonnet",
+            "opus",
+            "haiku"
+          ],
+          "default": "sonnet",
+          "description": "Claude model for frontier work."
+        },
+        "loadout.codexEffort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "medium",
+          "description": "Codex reasoning effort for frontier work."
+        },
+        "loadout.frontier": {
+          "type": "string",
+          "enum": [
+            "balance",
+            "claude",
+            "codex"
+          ],
+          "default": "balance",
+          "description": "balance: send frontier work to whichever subscription has more of its 5-hour window left."
+        }
       }
-    }
+    },
+    "commands": [
+      {
+        "command": "loadout.checkSetup",
+        "title": "Check Setup",
+        "category": "Loadout"
+      },
+      {
+        "command": "loadout.setUpModel",
+        "title": "Set Up Local Model",
+        "category": "Loadout"
+      },
+      {
+        "command": "loadout.addToRepo",
+        "title": "Add to This Repo",
+        "category": "Loadout"
+      }
+    ]
   }
 }

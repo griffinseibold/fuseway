@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Scores the real router (Qwen, then Haiku on FRONTIER) on labeled requests. Spends ~1K Claude tokens per Haiku call.
+// Scores the real router (rules, then Qwen, then Haiku on FRONTIER) on labeled requests. Spends ~1K Claude tokens per Haiku call.
 //   node extension/route-eval.mjs
 // Labels are judgment calls; add cases when the router gets one wrong in real use.
 import { createRequire } from 'node:module';
@@ -24,11 +24,12 @@ const CASES = [
   ['Add pagination to the list endpoint and update the three callers in other packages', 'frontier'],
 ];
 
-let right = 0, haiku = 0, tokens = 0;
+let right = 0, haiku = 0, tokens = 0, byRule = 0;
 const start = Date.now();
 for (const [prompt, want] of CASES) {
-  const out = await r.classify(prompt, null, { qwen: r.askQwen, haiku: async (i) => { haiku++; const h = await r.askHaiku(i); tokens += h.tokens; return h; }, log: () => {} });
+  const out = await r.classify({ prompt, localContext: r.localConfig()?.contextWindow }, { qwen: r.askQwen, haiku: async (i) => { haiku++; const h = await r.askHaiku(i); tokens += h.tokens; return h; }, log: () => {} });
+  if (out.trail[0].startsWith('rule:')) byRule++;
   if (out.tier === want) right++;
   else console.log(`  miss  want ${want}, got ${out.tier} (${out.trail.join(' → ')}): ${prompt.slice(0, 60)}`);
 }
-console.log(`${right}/${CASES.length} correct; Haiku consulted ${haiku}/${CASES.length} times (${tokens} Claude tokens total); ${((Date.now() - start) / CASES.length / 1000).toFixed(2)} s per decision`);
+console.log(`${right}/${CASES.length} correct; ${byRule} decided by rules; Haiku consulted ${haiku}/${CASES.length} times (${tokens} Claude tokens total); ${((Date.now() - start) / CASES.length / 1000).toFixed(2)} s per decision`);

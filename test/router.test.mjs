@@ -2,34 +2,82 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const r = createRequire(import.meta.url)('../extension/router.js');
 const NOW = Date.UTC(2026, 10, 21, 16, 0) ;
 const inAnHour = NOW / 1000 + 3600;
 const noLog = () => {};
 
+// Prompts that no rule matches, so the models decide.
+const NEUTRAL = 'Write a unit test for a function that reverses a string';
+
 test('Qwen LOCAL is final; Haiku is never asked', async () => {
   let haikuCalls = 0;
-  const out = await r.classify('add a docstring', null, { qwen: async () => ({ label: 'LOCAL', tokens: 1 }), haiku: async () => { haikuCalls++; }, log: noLog });
+  const out = await r.classify({ prompt: NEUTRAL }, { qwen: async () => ({ label: 'LOCAL', tokens: 1 }), haiku: async () => { haikuCalls++; }, log: noLog });
   assert.equal(out.tier, 'local');
   assert.equal(haikuCalls, 0);
 });
 
 test('Qwen FRONTIER is checked by Haiku, which can send it back to local', async () => {
   const deps = (label) => ({ qwen: async () => ({ label: 'FRONTIER', tokens: 1 }), haiku: async () => ({ label, tokens: 1 }), log: noLog });
-  assert.equal((await r.classify('x', null, deps('LOCAL'))).tier, 'local');
-  assert.equal((await r.classify('x', null, deps('FRONTIER'))).tier, 'frontier');
+  assert.equal((await r.classify({ prompt: NEUTRAL }, deps('LOCAL'))).tier, 'local');
+  assert.equal((await r.classify({ prompt: NEUTRAL }, deps('FRONTIER'))).tier, 'frontier');
 });
 
-test('with the local model down, everything goes to a frontier model', async () => {
-  const out = await r.classify('x', null, { qwen: async () => { throw new Error('refused'); }, haiku: async () => ({ label: 'LOCAL', tokens: 1 }), log: noLog });
+test('with the local model down, everything goes frontier without asking Haiku', async () => {
+  let haikuCalls = 0;
+  const out = await r.classify({ prompt: NEUTRAL }, { qwen: async () => { throw new Error('refused'); }, haiku: async () => { haikuCalls++; }, log: noLog });
   assert.equal(out.tier, 'frontier');
   assert.match(out.trail.join(' '), /offline/);
+  assert.equal(haikuCalls, 0);
 });
 
-test('when both routers fail, it errs toward frontier', async () => {
+test('when Haiku fails, it errs toward frontier', async () => {
   const fail = async () => { throw new Error('boom'); };
-  assert.equal((await r.classify('x', null, { qwen: async () => ({ label: 'FRONTIER' }), haiku: fail, log: noLog })).tier, 'frontier');
+  assert.equal((await r.classify({ prompt: NEUTRAL }, { qwen: async () => ({ label: 'FRONTIER' }), haiku: fail, log: noLog })).tier, 'frontier');
+});
+
+test('rules decide before any model is asked', async () => {
+  const never = { qwen: async () => assert.fail('Qwen asked'), haiku: async () => assert.fail('Haiku asked'), log: noLog };
+  const rule = async (ctx) => { const out = await r.classify(ctx, never); return [out.tier, out.trail[0]]; };
+  assert.deepEqual(await rule({ prompt: 'Review how we store passwords' }), ['frontier', 'rule: mentions "password"']);
+  assert.deepEqual(await rule({ prompt: 'Plan the database migration' }), ['frontier', 'rule: mentions "migrat"']);
+  assert.deepEqual(await rule({ prompt: 'Add a docstring to parse()' }), ['local', 'rule: "docstring" task']);
+  assert.deepEqual(await rule({ prompt: 'Add a docstring to the login handler' }), ['frontier', 'rule: mentions "login"'], 'frontier keywords beat local ones');
+});
+
+test('size, file count and repo paths escalate deterministically', () => {
+  const big = r.applyRules({ prompt: NEUTRAL, files: [{ path: 'a.js', bytes: 200_000 }], localContext: 65536 });
+  assert.equal(big.tier, 'frontier');
+  assert.match(big.trail[0], /over 50% of the local context/);
+  assert.equal(r.applyRules({ prompt: NEUTRAL, files: [{ path: 'a', bytes: 1 }, { path: 'b', bytes: 1 }, { path: 'c', bytes: 1 }] }).tier, 'frontier');
+  const rules = { ...r.DEFAULT_RULES, frontierPaths: ['src/billing/**'] };
+  assert.match(r.applyRules({ prompt: NEUTRAL, files: [{ path: 'src/billing/invoice.ts', bytes: 10 }], rules }).trail[0], /frontier list/);
+  assert.equal(r.applyRules({ prompt: NEUTRAL, files: [{ path: 'src/ui/button.ts', bytes: 10 }], rules }), null);
+});
+
+test('conversation rules: follow-ups stick, repeated local failures escalate', () => {
+  const after = (backend) => [{ user: 'x', meta: { backend } }];
+  assert.deepEqual(r.applyRules({ prompt: 'make it shorter', turns: after('claude') }), { tier: 'same', backend: 'claude', trail: ['rule: short follow-up stays with Claude'] });
+  assert.equal(r.applyRules({ prompt: 'make it shorter', turns: after('local') }), null);
+  const twoLocal = [...after('local'), ...after('local')];
+  assert.match(r.applyRules({ prompt: "that didn't work, the tests still fail", turns: twoLocal }).trail[0], /tried 2 times/);
+  assert.equal(r.applyRules({ prompt: "that didn't work", turns: after('local') }), null, 'one local attempt is not enough');
+});
+
+test('a repo can extend the rules in .agents/routing.json', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'loadout-rules-'));
+  mkdirSync(join(dir, '.agents'));
+  writeFileSync(join(dir, '.agents/routing.json'), JSON.stringify({ frontierKeywords: ['ledger'], maxLocalFiles: 5, unknown: 1 }));
+  const rules = r.loadRules(dir);
+  assert.ok(rules.frontierKeywords.includes('ledger') && rules.frontierKeywords.includes('password'), 'lists are added to the defaults');
+  assert.equal(rules.maxLocalFiles, 5);
+  assert.equal(rules.unknown, undefined);
+  assert.equal(r.applyRules({ prompt: 'Update the ledger totals', rules }).tier, 'frontier');
+  assert.deepEqual(r.loadRules(join(dir, 'nope')), r.DEFAULT_RULES);
 });
 
 test('frontier work goes to the subscription with more 5-hour headroom', () => {

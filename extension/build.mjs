@@ -3,13 +3,20 @@
 //   node extension/build.mjs [out.vsix]     default: extension/loadout.vsix
 import { crc32 } from 'node:zlib';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(DIR, 'package.json'), 'utf8'));
 const out = process.argv[2] || join(DIR, `${pkg.name}.vsix`);
+const REPO = join(DIR, '..');
 const SHIP = ['package.json', 'extension.js', 'router.js', 'README.md'];
+// The loadout CLI and everything `loadout init` installs, at the same paths as in the repo, so the bundled CLI
+// finds them next to itself.
+const BUNDLE = ['bin/loadout.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',
+  '.agents/tasks/refresh-context.md', '.agents/skills', 'local-llm/models.json', 'local-llm/bench.sh'];
+const walk = (rel) => (statSync(join(REPO, rel)).isDirectory()
+  ? readdirSync(join(REPO, rel)).flatMap((f) => walk(join(rel, f))) : [rel.split(sep).join('/')]);
 
 const manifest = `<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
@@ -24,13 +31,15 @@ const manifest = `<?xml version="1.0" encoding="utf-8"?>
   <Assets><Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" /></Assets>
 </PackageManifest>
 `;
-const types = `<?xml version="1.0" encoding="utf-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension=".json" ContentType="application/json" /><Default Extension=".js" ContentType="application/javascript" /><Default Extension=".md" ContentType="text/markdown" /><Default Extension=".vsixmanifest" ContentType="text/xml" /></Types>
-`;
-
-const files = [['[Content_Types].xml', Buffer.from(types)], ['extension.vsixmanifest', Buffer.from(manifest)],
+const payload = [
   ...SHIP.filter((f) => { try { return statSync(join(DIR, f)).isFile(); } catch { return false; } })
-    .map((f) => [`extension/${f}`, readFileSync(join(DIR, f))])];
+    .map((f) => [`extension/${f}`, readFileSync(join(DIR, f))]),
+  ...BUNDLE.flatMap(walk).map((f) => [`extension/${f}`, readFileSync(join(REPO, f))])];
+// Every file extension in the package needs a content type; the exact type doesn't matter to VS Code.
+const exts = [...new Set(['vsixmanifest', ...payload.map(([n]) => n.split('/').pop()).filter((b) => b.includes('.')).map((b) => b.split('.').pop())])];
+const types = `<?xml version="1.0" encoding="utf-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">${exts
+  .map((e) => `<Default Extension=".${e}" ContentType="${{ json: 'application/json', js: 'application/javascript', mjs: 'application/javascript', md: 'text/markdown', vsixmanifest: 'text/xml' }[e] || 'application/octet-stream'}" />`).join('')}</Types>\n`;
+const files = [['[Content_Types].xml', Buffer.from(types)], ['extension.vsixmanifest', Buffer.from(manifest)], ...payload];
 
 // A stored (uncompressed) zip: local headers, then the central directory, then its end record.
 const locals = [], centrals = [];

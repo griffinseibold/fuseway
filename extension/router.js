@@ -1,6 +1,6 @@
 // Routing and backends for the @loadout chat participant. No vscode imports, so node --test can run it.
 //
-// Per request: Qwen classifies LOCAL or FRONTIER (free, ~0.3 s). LOCAL is final. FRONTIER goes to Haiku to
+// Per request: deterministic rules decide what they can (applyRules). Otherwise Qwen classifies LOCAL or FRONTIER (free, ~0.3 s). LOCAL is final. FRONTIER goes to Haiku to
 // confirm (~1K tokens), because Qwen over-escalates. Frontier work goes to whichever of Claude and Codex has
 // more of its 5-hour window left, from the utilization both CLIs report. All three backends are agent CLIs
 // that read and edit the workspace themselves: Codex on the local model, Claude Code, and Codex.
@@ -65,32 +65,85 @@ async function askHaiku(input) {
   return { label: /FRONTIER/i.test(s.text) ? 'FRONTIER' : 'LOCAL', tokens: s.inTok + s.outTok };
 }
 
-// Returns { tier: 'local' | 'frontier', trail: [...] }. Never throws: when in doubt, frontier.
-async function classify(prompt, previousPrompt, deps = { qwen: askQwen, haiku: askHaiku, log: appendUsage }) {
-  const input = routerInput(prompt, previousPrompt);
-  const trail = [];
-  try {
-    const q = await deps.qwen(input);
-    deps.log({ backend: 'router-qwen', ok: true, in: q.tokens, out: 0 });
-    if (q.label === 'LOCAL') return { tier: 'local', trail: ['Qwen: LOCAL'] };
-    trail.push('Qwen: FRONTIER');
-  } catch (e) {
-    trail.push(`Qwen unavailable (${e.message})`);
-    try {
-      const h = await deps.haiku(input);
-      deps.log({ backend: 'router-haiku', ok: true, in: h.tokens, out: 0 });
-      // With the local model down, LOCAL work has nowhere to run, so it goes to a frontier model.
-      return { tier: 'frontier', trail: [...trail, `Haiku: ${h.label}`, h.label === 'LOCAL' ? 'local model offline' : null].filter(Boolean) };
-    } catch (e2) {
-      return { tier: 'frontier', trail: [...trail, `Haiku failed (${e2.message})`] };
-    }
+// ---------- deterministic rules ----------
+// Checked in order before any model is asked; the first match decides. A repo can extend them in
+// .agents/routing.json (lists are added to these, numbers replace them).
+const DEFAULT_RULES = {
+  // Mistakes here are costly or need deep reasoning. Matched as word prefixes: "migrat" matches "migration".
+  frontierKeywords: ['security', 'vulnerab', 'authenticat', 'authoriz', 'oauth', 'login', 'sso', 'password', 'secret',
+    'credential', 'api key', 'access token', 'encrypt', 'crypto', 'permission', 'injection', 'xss', 'csrf', 'cve', 'sanitiz',
+    'architect', 'design', 'migrat', 'race condition', 'deadlock', 'concurren', 'thread-safe', 'memory leak', 'scalab',
+    'production', 'incident', 'outage', 'data loss', 'root cause', 'intermittent', 'flaky'],
+  // Small, mechanical jobs. Only applies to short requests with no frontier keyword.
+  localKeywords: ['docstring', 'jsdoc', 'comment', 'rename', 'typo', 'spelling', 'format', 'gitignore', 'commit message',
+    'changelog', 'summarize', 'summary', 'convert', 'boilerplate', 'readme', 'lint'],
+  frontierPaths: [], // globs, e.g. "src/billing/**": any attached file there goes frontier
+  maxLocalShare: 0.5, // prompt + attached files above this share of the local context window go frontier
+  localAttempts: 2, // after this many local turns in a row, a "that didn't work" message goes frontier
+  followUpChars: 300, // a message this short right after a frontier turn stays with that backend
+  maxLocalChars: 2000, // local keywords only count for requests shorter than this
+  maxLocalFiles: 2, // more attached files than this goes frontier
+};
+const FAILURE = /(didn'?t|doesn'?t|does not|did not) work|not working|still (fail|broken|wrong|not)|is wrong|\bbroke|got an? (error|exception)|traceback|stack trace|tests? (fail|still)/i;
+
+function loadRules(repoDir) {
+  const repo = repoDir ? readJson(path.join(repoDir, '.agents', 'routing.json'), {}) : {};
+  const out = { ...DEFAULT_RULES };
+  for (const [k, v] of Object.entries(repo)) {
+    if (!(k in DEFAULT_RULES)) continue;
+    out[k] = Array.isArray(DEFAULT_RULES[k]) ? [...DEFAULT_RULES[k], ...(Array.isArray(v) ? v : [])] : typeof v === 'number' ? v : DEFAULT_RULES[k];
   }
+  return out;
+}
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const keyword = (list, text) => list.find((w) => new RegExp(`\\b${escapeRe(w)}`, 'i').test(text));
+const globRe = (g) => new RegExp(`^${g.split('**').map((part) => part.split('*').map(escapeRe).join('[^/]*')).join('.*')}$`);
+const kTokens = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
+
+// ctx: { prompt, turns: [{ user, meta: { backend } }], files: [{ path (repo-relative), bytes }], localContext, rules }
+// Returns { tier: 'local' | 'frontier' | 'same', backend?, trail } when a rule decides, else null.
+function applyRules({ prompt, turns = [], files = [], localContext = 32768, rules = DEFAULT_RULES }) {
+  const decide = (tier, why, backend) => ({ tier, backend, trail: [`rule: ${why}`] });
+  const prev = turns.at(-1)?.meta?.backend;
+  if ((prev === 'claude' || prev === 'codex') && prompt.length <= rules.followUpChars && !keyword(rules.localKeywords, prompt))
+    return decide('same', `short follow-up stays with ${LABELS[prev]}`, prev);
+  let streak = 0;
+  for (let i = turns.length - 1; i >= 0 && turns[i].meta?.backend === 'local'; i--) streak++;
+  if (streak >= rules.localAttempts && FAILURE.test(prompt)) return decide('frontier', `local model tried ${streak} times`);
+  const tokens = Math.ceil((prompt.length + files.reduce((sum, f) => sum + (f.bytes || 0), 0)) / 4);
+  if (tokens > rules.maxLocalShare * localContext)
+    return decide('frontier', `~${kTokens(tokens)} tokens is over ${Math.round(rules.maxLocalShare * 100)}% of the local context`);
+  const pinned = files.find((f) => rules.frontierPaths.some((g) => globRe(g).test(f.path)));
+  if (pinned) return decide('frontier', `${pinned.path} is on this repo's frontier list`);
+  const hard = keyword(rules.frontierKeywords, prompt);
+  if (hard) return decide('frontier', `mentions "${hard}"`);
+  if (files.length > rules.maxLocalFiles) return decide('frontier', `${files.length} files attached`);
+  const easy = keyword(rules.localKeywords, prompt);
+  if (easy && prompt.length < rules.maxLocalChars) return decide('local', `"${easy}" task`);
+  return null;
+}
+
+// Rules first; then Qwen; LOCAL is final; FRONTIER is checked by Haiku. Never throws: when in doubt, frontier.
+async function classify(ctx, deps = { qwen: askQwen, haiku: askHaiku, log: appendUsage }) {
+  const ruled = applyRules(ctx);
+  if (ruled) return ruled;
+  const input = routerInput(ctx.prompt, ctx.turns?.at(-1)?.user);
+  let q;
+  try {
+    q = await deps.qwen(input);
+    deps.log({ backend: 'router-qwen', ok: true, in: q.tokens, out: 0 });
+  } catch (e) {
+    // With the local model down, local work has nowhere to run, so there is nothing to ask Haiku.
+    return { tier: 'frontier', trail: [`local model offline (${e.message})`] };
+  }
+  if (q.label === 'LOCAL') return { tier: 'local', trail: ['Qwen: LOCAL'] };
   try {
     const h = await deps.haiku(input);
     deps.log({ backend: 'router-haiku', ok: true, in: h.tokens, out: 0 });
-    return { tier: h.label === 'LOCAL' ? 'local' : 'frontier', trail: [...trail, `Haiku: ${h.label}`] };
+    return { tier: h.label === 'LOCAL' ? 'local' : 'frontier', trail: ['Qwen: FRONTIER', `Haiku: ${h.label}`] };
   } catch (e) {
-    return { tier: 'frontier', trail: [...trail, `Haiku failed (${e.message})`] };
+    return { tier: 'frontier', trail: ['Qwen: FRONTIER', `Haiku failed (${e.message})`] };
   }
 }
 
@@ -313,4 +366,6 @@ function usageMarkdown(hours = 5, now = Date.now()) {
     ...Object.entries(rows).map(([b, r]) => `| ${b} | ${r.calls} | ${r.failed} | ${k(r.in)} | ${k(r.out)} |`)].join('\n');
 }
 
-module.exports = { LABELS, classify, pickFrontier, readLimits, run, plan, usageMarkdown, claudeEvent, claudeState, codexEvent, codexState, claudeWindow, codexWindow, askQwen, askHaiku, BackendError };
+const localConfig = () => readJson(LOCAL_CONFIG, null);
+
+module.exports = { localConfig, LABELS, DEFAULT_RULES, loadRules, applyRules, classify, pickFrontier, readLimits, run, plan, usageMarkdown, claudeEvent, claudeState, codexEvent, codexState, claudeWindow, codexWindow, askQwen, askHaiku, BackendError };

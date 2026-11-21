@@ -8,8 +8,13 @@
   - `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`: loadout's text goes between `<!-- loadout:begin -->` and `<!-- loadout:end -->`, replaced in place on rerun. New files come from `template/`. `CLAUDE.md` is left alone if it already has an `@AGENTS.md` line.
   - `.mcp.json`, `.vscode/mcp.json`, `.vscode/extensions.json`: a `fusion` entry is merged in. A file that isn't plain JSON (comments) is skipped, and the entry to add is printed.
   - `.gitignore`: missing lines appended.
+  - `.agents/routing.json`: a starter with empty lists, created only if missing (rules for `@loadout`).
 - Running it in the loadout repo itself is a no-op for the owned files.
 - Every file reports `created`, `updated`, `unchanged` or `skipped`; a second run reports no changes (tested).
+
+## setup and doctor
+- `setup`: link `~/.local/bin/loadout` (when that's on PATH), run `model`, install the extension when running from a clone, then `doctor`.
+- `doctor [--json]`: checks `claude auth status` (JSON `loggedIn`), `codex login status` (which prints to stderr, so read both streams), that the local model answers and makes tool calls, that the Codex local profile exists, and Node 22+ (a warning only, since fusion needs it). Each failed check comes with the command that fixes it. The extension runs `doctor --json` on startup.
 
 ## model
 - `--url URL` (declared) or discovery over the usual local ports; `--model ID` and `--ctx N` override what the server reports.

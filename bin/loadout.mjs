@@ -4,7 +4,9 @@
 //   loadout model [--url URL] [--ctx N]  find, check and configure this machine's local model server
 //   loadout model --recommend [--vram GiB] [--ram GiB]   recommend a model for this (or a hypothetical) machine
 //   loadout extension                    build and install the @loadout VS Code chat participant
-import { execFileSync } from 'node:child_process';
+//   loadout setup                        one-time machine setup: PATH, local model, extension, then doctor
+//   loadout doctor [--json]              check the CLIs, their sign-ins and the local model
+import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, platform, arch, totalmem } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
@@ -84,6 +86,10 @@ function init(args) {
   upsert(root, '.github/copilot-instructions.md', template('copilot-instructions.md'));
   if (existsSync(join(root, '.agents/context/index.md'))) report('.agents/context/index.md', 'unchanged');
   else writeFile(root, '.agents/context/index.md', template('context-index.md'));
+
+  // Repo-owned: extra routing rules for @loadout, added to its defaults (see .agents/context/extension.md in loadout).
+  if (existsSync(join(root, '.agents/routing.json'))) report('.agents/routing.json', 'unchanged');
+  else writeFile(root, '.agents/routing.json', JSON.stringify({ frontierPaths: [], frontierKeywords: [], localKeywords: [] }, null, 2) + '\n');
 
   for (const rel of ['.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs', '.agents/tasks/refresh-context.md']) copyOwned(root, rel);
 
@@ -296,6 +302,74 @@ function extension() {
   if (!existsSync(LOCAL_CONFIG)) console.log('No local model configured yet: run `loadout model` so @loadout can route to it.');
 }
 
+// ---------- doctor and setup ----------
+
+const CODEX_BUNDLED = '/usr/lib/chatgpt/resources/codex';
+// Some CLIs print status to stderr, so keep both streams.
+const quiet = (bin, args) => {
+  const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 15_000, stdio: ['ignore', 'pipe', 'pipe'] });
+  return { ok: r.status === 0, out: `${r.stdout || ''}${r.stderr || ''}` };
+};
+
+async function checks() {
+  const out = [];
+  const add = (name, ok, detail, fix, optional = false) => out.push({ name, ok, detail, fix: ok ? null : fix, optional });
+
+  const claude = which('claude');
+  if (!claude) add('Claude Code CLI', false, 'not installed', 'npm install -g @anthropic-ai/claude-code, then run `claude` once to sign in');
+  else {
+    let status = {};
+    try { status = JSON.parse(quiet(claude, ['auth', 'status']).out); } catch {}
+    add('Claude Code CLI', !!status.loggedIn, status.loggedIn ? `signed in (${status.authMethod})` : 'not signed in', 'run `claude` and sign in with your Claude account');
+  }
+
+  const codex = which('codex') || (existsSync(CODEX_BUNDLED) ? CODEX_BUNDLED : null);
+  if (!codex) add('Codex CLI', false, 'not installed', 'npm install -g @openai/codex, then `codex login`');
+  else {
+    const s = quiet(codex, ['login', 'status']);
+    add('Codex CLI', s.ok && /logged in/i.test(s.out), s.out.trim().split('\n')[0] || 'not signed in', '`codex login` and sign in with ChatGPT');
+  }
+
+  const local = existsSync(LOCAL_CONFIG) ? JSON.parse(read(LOCAL_CONFIG)) : null;
+  if (!local) add('Local model', false, 'not configured', '`loadout model` (or "Loadout: Set Up Local Model" in VS Code)');
+  else {
+    const models = await listModels(local.url);
+    add('Local model', !!models && local.toolCalling, models ? `${local.model} at ${local.url}${local.toolCalling ? '' : ', but tool calls failed'}` : `offline at ${local.url}`,
+      models ? 'serve it with tool calling on (llama-server needs --jinja), then `loadout model`' : 'start the model server (homelab: ./scripts/lab-mode.py llm --wait), or `loadout model` to pick another');
+  }
+  const profile = join(homedir(), '.codex', 'local.config.toml');
+  add('Codex local profile', existsSync(profile), existsSync(profile) ? profile : 'missing: @loadout runs local work through it', '`loadout model`');
+
+  const nodeVersion = quiet('node', ['--version']);
+  const major = Number((nodeVersion.out.match(/v(\d+)/) || [])[1] || 0);
+  add('Node 22+ on PATH', major >= 22, nodeVersion.ok ? nodeVersion.out.trim() : 'not found', 'install Node 22 or newer (only needed for the fusion MCP server in repos)', true);
+  return out;
+}
+
+async function doctor(args) {
+  const results = await checks();
+  if (args.flags.json) return console.log(JSON.stringify(results));
+  for (const c of results) console.log(`  ${c.ok ? 'ok  ' : c.optional ? 'warn' : 'FIX '}  ${c.name.padEnd(20)} ${c.detail}${c.fix ? `\n        → ${c.fix}` : ''}`);
+  const missing = results.filter((c) => !c.ok && !c.optional).length;
+  console.log(missing ? `\n${missing} thing(s) to fix.` : '\nAll set.');
+}
+
+async function setup(args) {
+  const bin = join(homedir(), '.local', 'bin');
+  const link = join(bin, 'loadout');
+  console.log('1. Command');
+  if (existsSync(link) || which('loadout')) console.log(`  ok    loadout is on PATH (${which('loadout') || link})`);
+  else if ((process.env.PATH || '').split(delimiter).includes(bin)) { mkdirSync(bin, { recursive: true }); symlinkSync(join(LOADOUT, 'bin', 'loadout.mjs'), link); console.log(`  added ${link}`); }
+  else console.log(`  skip  ${bin} is not on PATH; run this CLI as node ${join(LOADOUT, 'bin', 'loadout.mjs')}`);
+  console.log('\n2. Local model');
+  await model({ positional: [], flags: {} }).catch((e) => console.log(`  ${e.message}`));
+  console.log('\n3. VS Code extension');
+  if (existsSync(join(LOADOUT, 'extension', 'build.mjs'))) extension();
+  else console.log('  ok    running from the installed extension');
+  console.log('\n4. Check');
+  await doctor({ flags: {} });
+}
+
 // ---------- main ----------
 
 function parse(argv) {
@@ -304,13 +378,13 @@ function parse(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) { out.positional.push(a); continue; }
     const [k, v] = a.slice(2).split('=');
-    out.flags[k] = v ?? (argv[i + 1] && !argv[i + 1].startsWith('--') && !['recommend', 'no-pstack'].includes(k) ? argv[++i] : true);
+    out.flags[k] = v ?? (argv[i + 1] && !argv[i + 1].startsWith('--') && !['recommend', 'no-pstack', 'json'].includes(k) ? argv[++i] : true);
   }
   return out;
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
-const commands = { init, model, extension };
+const commands = { init, model, extension, setup, doctor };
 if (!commands[cmd]) {
   console.log(read(fileURLToPath(import.meta.url)).split('\n').slice(1).filter((l, i, a) => a.slice(0, i + 1).every((x) => x.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
   process.exit(cmd ? 2 : 0);

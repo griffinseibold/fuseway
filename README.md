@@ -2,27 +2,28 @@
 
 One agent setup for every repo, and one local model per machine. Claude Code, Codex and Copilot Chat read the same `AGENTS.md`, share a context cache, and hand work to each other and to your local model through the `fusion` MCP server. Each frontier call goes through the official CLI, so it spends your flat-rate subscription instead of API credits.
 
-## Install once per machine
-```bash
-git clone <this repo> ~/loadout
-ln -s ~/loadout/bin/loadout.mjs ~/.local/bin/loadout   # needs Node 22
-loadout model                                          # find, check and configure your local model
-```
-`loadout model` works in one of three ways:
-- **You already have a server:** `loadout model --url http://host:port/v1`.
-- **It discovers one:** with no flags it probes homelab (`llm.localhost:8080`), llama-server (`:8080`), Ollama (`:11434`), LM Studio (`:1234`) and vLLM (`:8000`).
-- **It recommends one:** `loadout model --recommend` reads your GPU's VRAM and your RAM (AMD, NVIDIA, Apple Silicon or CPU only) and prints the model, the download and the run command. Add `--vram 24 --ram 64` to ask about other hardware. The table is [local-llm/models.json](local-llm/models.json).
+## Install
+Everything runs on your machine. The only calls that leave it are the ones Claude Code and Codex make to your own subscriptions.
 
-Once it has a server, it checks that tool calls work, then configures:
-- **fusion `ask_local`:** `~/.config/loadout/local.json`
-- **Codex:** `codex --profile local` (`~/.codex/local.config.toml`)
-- **VS Code:** the model picker (`chatLanguageModels.json`)
+**With VS Code:** install `loadout.vsix` (*Extensions: Install from VSIX…*). The extension carries the whole CLI and runs it with VS Code's own Node. When VS Code starts, it checks your setup and offers fixes for anything missing.
+
+**From a clone:**
+```bash
+git clone <this repo> ~/loadout && node ~/loadout/bin/loadout.mjs setup
+```
+`setup` puts `loadout` on your PATH, finds or recommends a local model and configures it, installs the extension, and ends with `loadout doctor`. Rerun `loadout doctor` any time.
+
+**You need:**
+- The `claude` and `codex` CLIs, signed in to your subscriptions. `doctor` gives the install command for whichever is missing.
+- A local model server. `loadout model` finds one on the usual ports, takes `--url` for one elsewhere, or with `--recommend` picks a model for your GPU and RAM and prints the download and run commands. The table is [local-llm/models.json](local-llm/models.json).
+
+**Per repo:** nothing for `@loadout`, which works in any open folder. For the shared agent setup (AGENTS.md, the context cache, skills, the fusion MCP server and `.agents/routing.json`), run **Loadout: Add to This Repo** or `loadout init`.
 
 ## Chat: `@loadout` in VS Code
 ```bash
 loadout extension
 ```
-This builds and installs a chat participant that routes each request itself. The local model classifies it for free, and Claude Haiku double-checks anything that looks hard. Frontier work goes to Claude Code or Codex, whichever subscription has more of its 5-hour window left. Each reply says who answered and what it cost. `/local`, `/claude` and `/codex` force a backend, and `/usage` shows both windows. See [extension/README.md](extension/README.md).
+This builds and installs a chat participant that routes each request itself. The local model classifies it for free, and Claude Haiku double-checks anything that looks hard. Deterministic rules decide first. Security words, a large attachment, a repo path you've pinned, or the local model failing twice all go frontier, and simple jobs like docstrings stay local. Frontier work goes to Claude Code or Codex, whichever subscription has more of its 5-hour window left. Each reply says who answered and what it cost. `/local`, `/claude` and `/codex` force a backend, and `/usage` shows both windows. See [extension/README.md](extension/README.md).
 
 ## Add to a repo
 ```bash
@@ -39,7 +40,7 @@ Then fill in the **Project** and **Commands** sections of `AGENTS.md`.
 ## What's here
 | Path | Purpose |
 |---|---|
-| `bin/loadout.mjs` | The CLI: `init`, `model`, `extension` |
+| `bin/loadout.mjs` | The CLI: `setup`, `doctor`, `init`, `model`, `extension` |
 | `extension/` | The `@loadout` chat participant: `router.js` (routing and backends), `route-eval.mjs` (routing accuracy) |
 | `template/` | What `init` writes: the `AGENTS.md` section and starter files |
 | `.agents/fusion/` | MCP server: `ask_local`, `ask_claude`, `ask_codex`, `critique`. See `.agents/context/fusion.md` |
