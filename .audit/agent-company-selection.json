@@ -1,0 +1,28 @@
+{
+  "base": "candidate A df4a0d0",
+  "alternative": "candidate B 668b2fd",
+  "rubric": {
+    "A": {
+      "release": 3,
+      "isolated_verified_trials": 3,
+      "elections": 3,
+      "bounded_durability": 3,
+      "tests": 3,
+      "maintainability": 2
+    },
+    "B": {
+      "release": 3,
+      "isolated_verified_trials": 2,
+      "elections": 3,
+      "bounded_durability": 3,
+      "tests": 2,
+      "maintainability": 3
+    }
+  },
+  "reason": "A tests real Git worktrees, verifier subprocesses and extracted CLI mission execution. Both converge on one foreground controller. B mocks more process behavior and requires manual placeholder model edits.",
+  "grafts": [
+    "B explicit owner config version",
+    "B complete requested profile and observed settings audit"
+  ],
+  "cross_vendor_review": "Claude CLI attempted, timed out after90seconds, no verdict accepted"
+}

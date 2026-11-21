@@ -1,0 +1,4 @@
+ts	phase	decision	why	evidence	result
+2026-11-21T18:31:49Z	frame	Ship a repository agent company through the existing CLI and VSIX	Keep the current Node22 zero-dependency install path and require owner acceptance checks	extension/build.mjs;bin/fuseway.mjs;/tmp/fuseway-company-brief.txt	open
+2026-11-21T18:34:40Z	architecture	Compare two isolated company controllers with real delegation and paired elections	Separate management quality from individual answers and protect owner grading from no-op wins	/tmp/fuseway-company-brief.txt;/tmp/fuseway-company-a;/tmp/fuseway-company-b	open
+2026-11-21T18:41:28Z	review	Excluded external Claude review from accepted evidence	The bounded CLI review timed out after90seconds without a verdict	/tmp/fuseway-company-review/plan-review.json;/tmp/fuseway-company-review/plan-review.err	INCONCLUSIVE
