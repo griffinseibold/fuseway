@@ -1,0 +1,32 @@
+{
+  "skill-inspector": {
+    "repo": "NVIDIA/SkillSpector",
+    "path": "skills/skill-inspector",
+    "commit": "48e0f942ea1f5fdb7aa096a6f65a0adeda2ecc4e"
+  },
+  "security-audit": {
+    "repo": "cloudflare/security-audit-skill",
+    "path": "skills/security-audit",
+    "commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"
+  },
+  "debugging-and-error-recovery": {
+    "repo": "addyosmani/agent-skills",
+    "path": "skills/debugging-and-error-recovery",
+    "commit": "8c99fa36d90068c82d547f7c12a9d67a3e95f4ee"
+  },
+  "api-and-interface-design": {
+    "repo": "addyosmani/agent-skills",
+    "path": "skills/api-and-interface-design",
+    "commit": "8c99fa36d90068c82d547f7c12a9d67a3e95f4ee"
+  },
+  "ci-cd-and-automation": {
+    "repo": "addyosmani/agent-skills",
+    "path": "skills/ci-cd-and-automation",
+    "commit": "8c99fa36d90068c82d547f7c12a9d67a3e95f4ee"
+  },
+  "frontend-ui-engineering": {
+    "repo": "addyosmani/agent-skills",
+    "path": "skills/frontend-ui-engineering",
+    "commit": "8c99fa36d90068c82d547f7c12a9d67a3e95f4ee"
+  }
+}
