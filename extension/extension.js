@@ -48,7 +48,8 @@ async function handle(request, context, stream, token) {
 
   const turns = turnsFrom(context.history);
   const forced = FORCED.includes(request.command);
-  const frontier = () => r.pickFrontier(r.readLimits(), c.get('frontier', 'balance'));
+  const frontier = () => r.pickFrontier(r.readLimits(), c.get('frontier', 'balance'), Date.now(),
+    { claude: c.get('claudeReserve', 0.2), codex: c.get('codexReserve', 0) });
   let backend, trail;
   if (forced) {
     backend = request.command;
@@ -104,6 +105,15 @@ function cli(args, { show = true } = {}) {
   });
 }
 
+// Runs setup commands where the user can watch and answer prompts. "loadout …" means the bundled CLI, run with
+// VS Code's own Node (ELECTRON_RUN_AS_NODE makes the VS Code binary behave as Node; it doesn't affect claude or codex).
+function inTerminal(commands) {
+  const self = `${process.platform === 'win32' ? '& ' : ''}"${process.execPath}" "${CLI}"`;
+  const term = vscode.window.createTerminal({ name: 'Loadout setup', env: { ELECTRON_RUN_AS_NODE: '1' } });
+  term.show();
+  for (const c of commands) term.sendText(c.replace(/^loadout\b/, self));
+}
+
 async function startupCheck(ctx) {
   if (ctx.globalState.get('loadout.quietSetup')) return;
   const { out } = await cli(['doctor', '--json'], { show: false });
@@ -111,11 +121,11 @@ async function startupCheck(ctx) {
   try { results = JSON.parse(out); } catch { return; }
   const todo = results.filter((x) => !x.ok && !x.optional);
   if (!todo.length) return;
-  const needsModel = todo.some((x) => /Local model|local profile/.test(x.name));
+  const runnable = [...new Set(todo.map((x) => x.run).filter(Boolean))];
   const pick = await vscode.window.showWarningMessage(`Loadout: ${todo.map((x) => x.name).join(', ')} need${todo.length === 1 ? 's' : ''} setting up.`,
-    ...(needsModel ? ['Set Up Local Model'] : []), 'Show Details', "Don't Ask Again");
+    ...(runnable.length ? ['Set Up'] : []), 'Show Details', "Don't Ask Again");
   if (pick === "Don't Ask Again") return ctx.globalState.update('loadout.quietSetup', true);
-  if (pick === 'Set Up Local Model') await cli(['model']);
+  if (pick === 'Set Up') return inTerminal([...runnable, 'loadout doctor']);
   if (pick) await cli(['doctor']);
 }
 
@@ -133,7 +143,7 @@ exports.activate = (ctx) => {
   const folder = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   ctx.subscriptions.push(participant, output,
     vscode.commands.registerCommand('loadout.checkSetup', () => cli(['doctor'])),
-    vscode.commands.registerCommand('loadout.setUpModel', () => cli(['model'])),
+    vscode.commands.registerCommand('loadout.setUpModel', () => inTerminal(['loadout model --install'])),
     vscode.commands.registerCommand('loadout.addToRepo', async () => {
       if (!folder()) return vscode.window.showErrorMessage('Loadout: open a folder first.');
       await cli(['init', folder()]);

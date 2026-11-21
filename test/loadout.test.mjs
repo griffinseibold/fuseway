@@ -71,3 +71,46 @@ test('model --recommend picks a tier from VRAM and RAM', () => {
   assert.match(at(4, 8), /no local model/);
   assert.match(loadout('model', '--recommend', '--vram', '16', '--ram', '48', '--gpu', 'nvidia'), /--gpus all[\s\S]*server-cuda-b10731/);
 });
+
+test('download resumes a partial file, verifies it, and rejects a corrupted one', async () => {
+  const { download } = await import('../bin/loadout.mjs');
+  const { createServer } = await import('node:http');
+  const { createHash } = await import('node:crypto');
+  const body = Buffer.alloc(300_000, 7);
+  const sha = createHash('sha256').update(body).digest('hex');
+  const ranges = [];
+  const server = createServer((req, res) => {
+    const m = /bytes=(\d+)-/.exec(req.headers.range || '');
+    ranges.push(m ? Number(m[1]) : 0);
+    if (m) { res.writeHead(206, { 'content-length': body.length - Number(m[1]) }); res.end(body.subarray(Number(m[1]))); }
+    else { res.writeHead(200, { 'content-length': body.length }); res.end(body); }
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${server.address().port}/model.gguf`;
+  const dir = repo();
+  try {
+    const dest = join(dir, 'model.gguf');
+    writeFileSync(`${dest}.partial`, body.subarray(0, 100_000));
+    await download(url, dest, sha, () => {});
+    assert.deepEqual(ranges, [100_000], 'asked only for the missing bytes');
+    assert.ok(readFileSync(dest).equals(body));
+    assert.ok(!existsSync(`${dest}.partial`));
+    await download(url, dest, sha, () => {});
+    assert.equal(ranges.length, 1, 'an existing verified file is not fetched again');
+    const bad = join(dir, 'bad.gguf');
+    await assert.rejects(download(url, bad, '0'.repeat(64), () => {}), /checksum mismatch/);
+    assert.ok(!existsSync(bad) && !existsSync(`${bad}.partial`), 'a corrupted download is removed');
+  } finally { server.close(); }
+});
+
+test('the server plan uses the right llama.cpp image and flags for each GPU', async () => {
+  const { serverPlan, dockerArgs } = await import('../bin/loadout.mjs');
+  const plan = (vendor, vramGiB, ramGiB = 48) => serverPlan({ gpu: vendor ? { vendor, vramGiB } : null, ramGiB });
+  const amd = dockerArgs(plan('amd', 16));
+  assert.ok(amd.includes('--device') && amd.some((a) => a.endsWith('server-vulkan-b10731')) && amd.includes('--jinja') && amd.includes('-ngl'));
+  assert.ok(dockerArgs(plan('nvidia', 24)).some((a) => a.endsWith('server-cuda-b10731')));
+  assert.ok(dockerArgs(plan('nvidia', 12, 32)).includes('--n-cpu-moe'), 'the 12 GB tier keeps experts in RAM');
+  assert.equal(plan('apple', 20).native, true, 'Macs run llama.cpp natively');
+  assert.equal(plan(null, 0).tier, null, 'no GPU: no local model');
+  assert.ok(!dockerArgs(serverPlan({ gpu: { vendor: 'other', vramGiB: 16 }, ramGiB: 48 })).includes('-ngl'), 'unknown GPUs get no offload flag');
+});

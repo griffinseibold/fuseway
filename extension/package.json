@@ -75,7 +75,21 @@
             "codex"
           ],
           "default": "balance",
-          "description": "balance: send frontier work to whichever subscription has more of its 5-hour window left."
+          "description": "balance: send frontier work to whichever subscription has more room left after its reserve, counting both its 5-hour and weekly windows."
+        },
+        "loadout.claudeReserve": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.9,
+          "default": 0.2,
+          "description": "Share of Claude's 5-hour and weekly windows kept for your own Claude Code sessions. Headless calls share those windows with you; once only this much is left, @loadout sends frontier work to Codex."
+        },
+        "loadout.codexReserve": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.9,
+          "default": 0,
+          "description": "Share of Codex's windows kept for your own Codex sessions."
         }
       }
     },

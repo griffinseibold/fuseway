@@ -124,16 +124,22 @@ test('the shipped catalog is well formed', () => {
   for (const x of cat) assert.ok(['local', 'frontier'].includes(x.route) && x.description, x.id);
 });
 
-test('frontier work goes to the subscription with more 5-hour headroom', () => {
+test('frontier work goes to the subscription with more headroom left after its reserve', () => {
   const w = (used, extra = {}) => ({ used, resetsAt: inAnHour, blocked: false, ...extra });
-  assert.equal(r.pickFrontier({ claude: w(0.8), codex: w(0.3) }, 'balance', NOW).backend, 'codex');
-  assert.equal(r.pickFrontier({ claude: w(0.2), codex: w(0.3) }, 'balance', NOW).backend, 'claude');
-  assert.equal(r.pickFrontier({ claude: w(0.2), codex: w(0.1, { blocked: true }) }, 'balance', NOW).backend, 'claude', 'blocked counts as empty');
-  assert.equal(r.pickFrontier({ claude: w(0.99), codex: w(0.5) }, 'claude', NOW).backend, 'codex', 'a preference yields when nearly out');
-  assert.equal(r.pickFrontier({ claude: w(0.4), codex: w(0.1) }, 'claude', NOW).backend, 'claude');
+  const none = { claude: 0, codex: 0 };
+  const pick = (limits, prefer = 'balance', reserve = none) => r.pickFrontier(limits, prefer, NOW, reserve).backend;
+  assert.equal(pick({ claude: w(0.8), codex: w(0.3) }), 'codex');
+  assert.equal(pick({ claude: w(0.2), codex: w(0.3) }), 'claude');
+  assert.equal(pick({ claude: w(0.2, { weekUsed: 0.9 }), codex: w(0.3) }), 'codex', 'the weekly window counts too');
+  assert.equal(pick({ claude: w(0.2), codex: w(0.1, { blocked: true }) }), 'claude', 'blocked counts as empty');
+  assert.equal(pick({ claude: w(0.99), codex: w(0.5) }, 'claude'), 'codex', 'a preference yields when nearly out');
+  assert.equal(pick({ claude: w(0.4), codex: w(0.1) }, 'claude'), 'claude');
   const expired = { used: 0.99, resetsAt: NOW / 1000 - 60, blocked: true };
-  assert.equal(r.pickFrontier({ claude: expired, codex: w(0.5) }, 'balance', NOW).backend, 'claude', 'a window that already reset is full again');
-  assert.equal(r.pickFrontier({}, 'balance', NOW).backend, 'claude', 'no data: Claude');
+  assert.equal(pick({ claude: expired, codex: w(0.5) }), 'claude', 'a 5-hour window that already reset is full again');
+  assert.equal(pick({}), 'claude', 'no data: Claude');
+  assert.equal(pick({ claude: w(0.3), codex: w(0.5) }, 'balance', { claude: 0.2, codex: 0 }), 'claude', '70% left minus a 20% reserve still beats 50%');
+  assert.equal(pick({ claude: w(0.65), codex: w(0.5) }, 'balance', { claude: 0.2, codex: 0 }), 'codex', 'the reserve keeps the rest of Claude for you');
+  assert.equal(pick({ claude: w(0.85), codex: w(0.97) }, 'claude', { claude: 0.2, codex: 0 }), 'codex', 'the reserve holds even when both are nearly out');
 });
 
 test('reads the windows both CLIs report', () => {

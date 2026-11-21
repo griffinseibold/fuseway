@@ -1,29 +1,23 @@
 # loadout
 
-One agent setup for every repo, and one local model per machine. Claude Code, Codex and Copilot Chat read the same `AGENTS.md`, share a context cache, and hand work to each other and to your local model through the `fusion` MCP server. Each frontier call goes through the official CLI, so it spends your flat-rate subscription instead of API credits.
+One agent setup for every repo, and one local model per machine. Claude Code, Codex and Copilot Chat read the same `AGENTS.md`, share a context cache, and hand work to each other and to your local model through the `fusion` MCP server. Each frontier call goes through the official `claude` or `codex` CLI. Signed in with your plan, those calls draw from your subscription limits, the same windows as your own sessions (per [Anthropic's support page](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan), updated October 2026). They don't touch API credits.
 
 ## Install
 Everything runs on your machine. The only calls that leave it are the ones Claude Code and Codex make to your own subscriptions.
 
-**With VS Code:** install `loadout.vsix` (*Extensions: Install from VSIX…*). The extension carries the whole CLI and runs it with VS Code's own Node. When VS Code starts, it checks your setup and offers fixes for anything missing.
+**Install the extension in VS Code** (`loadout.vsix`, via *Extensions: Install from VSIX…*), then type `@loadout` in the chat. On startup it checks the machine and offers **Set Up**. That opens a terminal that installs and signs in to the `claude` and `codex` CLIs if they're missing. It also finds your local model server, or downloads the model recommended for your GPU (after asking) and starts it in Docker. The extension carries the CLI and runs it with VS Code's own Node.
 
-**From a clone:**
-```bash
-git clone <this repo> ~/loadout && node ~/loadout/bin/loadout.mjs setup
-```
-`setup` puts `loadout` on your PATH, finds or recommends a local model and configures it, installs the extension, and ends with `loadout doctor`. Rerun `loadout doctor` any time.
-
-**You need:**
-- The `claude` and `codex` CLIs, signed in to your subscriptions. `doctor` gives the install command for whichever is missing.
-- A local model server. `loadout model` finds one on the usual ports, takes `--url` for one elsewhere, or with `--recommend` picks a model for your GPU and RAM and prints the download and run commands. The table is [local-llm/models.json](local-llm/models.json).
+**Or from a clone:** `git clone <this repo> ~/loadout && node ~/loadout/bin/loadout.mjs setup` does the same from a terminal.
 
 **Per repo:** nothing for `@loadout`, which works in any open folder. For the shared agent setup (AGENTS.md, the context cache, skills, the fusion MCP server and `.agents/routing.json`), run **Loadout: Add to This Repo** or `loadout init`.
+
+**Local model, by hand:** `loadout model` finds a running server on the usual ports, or takes `--url` for one elsewhere. `--recommend` shows what fits your GPU and RAM ([local-llm/models.json](local-llm/models.json)), and `--install` downloads and starts it. With no usable GPU, everything goes to Claude or Codex.
 
 ## Chat: `@loadout` in VS Code
 ```bash
 loadout extension
 ```
-This builds and installs a chat participant that routes each request itself. The local model classifies it for free, and Claude Haiku double-checks anything that looks hard. Structural rules decide first: a large attachment, a repo path you've pinned, or the local model failing twice all go frontier. The local model then matches the request against a catalog of 79 kinds of work (security, data, architecture and so on, versus docs, formatting and helpers). Anything near a frontier rule escalates, and Haiku breaks ties. Frontier work goes to Claude Code or Codex, whichever subscription has more of its 5-hour window left. Each reply says who answered and what it cost. `/local`, `/claude` and `/codex` force a backend, and `/usage` shows both windows. See [extension/README.md](extension/README.md).
+This builds and installs a chat participant that routes each request itself. The local model classifies it for free, and Claude Haiku double-checks anything that looks hard. Structural rules decide first: a large attachment, a repo path you've pinned, or the local model failing twice all go frontier. The local model then matches the request against a catalog of 79 kinds of work (security, data, architecture and so on, versus docs, formatting and helpers). Anything near a frontier rule escalates, and Haiku breaks ties. Frontier work goes to Claude Code or Codex, whichever has more room left in its 5-hour and weekly windows. A reserve of Claude's windows (20% by default) stays free for your own Claude Code sessions. Each reply says who answered and what it cost. `/local`, `/claude` and `/codex` force a backend, and `/usage` shows both windows. See [extension/README.md](extension/README.md).
 
 ## Add to a repo
 ```bash

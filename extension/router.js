@@ -197,17 +197,23 @@ async function classify(ctx, deps = { qwen: askQwen, haiku: askHaiku, log: appen
 
 // ---------- usage limits ----------
 
-// limits: { claude?: Window, codex?: Window }, Window = { used: 0..1, resetsAt: epoch seconds, blocked: bool }
-function headroom(w, now) {
-  if (!w || w.resetsAt * 1000 < now) return 1;
-  return w.blocked ? 0 : 1 - w.used;
+// limits: { claude?: Window, codex?: Window },
+// Window = { used: 0..1 (5-hour), resetsAt: epoch seconds, blocked: bool, weekUsed?: 0..1 }.
+// Headless calls share these windows with your own interactive sessions, so `reserve` keeps a share of each
+// for you: a provider with no more than its reserve left counts as empty.
+function headroom(w, now, reserve = 0) {
+  if (!w) return 1;
+  if (w.blocked && w.resetsAt * 1000 >= now) return 0;
+  const fiveHour = w.resetsAt * 1000 < now ? 0 : w.used;
+  const left = 1 - Math.max(fiveHour, w.weekUsed || 0);
+  return Math.max(0, (left - reserve) / (1 - reserve));
 }
 
-function pickFrontier(limits, prefer = 'balance', now = Date.now()) {
-  const left = { claude: headroom(limits.claude, now), codex: headroom(limits.codex, now) };
-  const current = (k) => limits[k] && limits[k].resetsAt * 1000 >= now;
+function pickFrontier(limits, prefer = 'balance', now = Date.now(), reserve = { claude: 0.2, codex: 0 }) {
+  const left = { claude: headroom(limits.claude, now, reserve.claude), codex: headroom(limits.codex, now, reserve.codex) };
+  const current = (k) => limits[k] && (limits[k].resetsAt * 1000 >= now || limits[k].weekUsed !== undefined);
   const pct = (k) => (current(k) ? `${Math.round(left[k] * 100)}%` : 'no current reading');
-  const why = `5h left: Claude ${pct('claude')}, Codex ${pct('codex')}`;
+  const why = `left after reserve: Claude ${pct('claude')}, Codex ${pct('codex')}`;
   const open = ['claude', 'codex'].filter((k) => left[k] > 0.05);
   if (prefer !== 'balance' && open.includes(prefer)) return { backend: prefer, why: `${why}; preferred` };
   const pool = open.length ? open : ['claude', 'codex'];

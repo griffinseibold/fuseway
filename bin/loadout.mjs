@@ -3,14 +3,18 @@
 //   loadout init [dir] [--no-pstack]     add the setup to a repo (default: current directory); safe to rerun
 //   loadout model [--url URL] [--ctx N]  find, check and configure this machine's local model server
 //   loadout model --recommend [--vram GiB] [--ram GiB]   recommend a model for this (or a hypothetical) machine
+//   loadout model --install [--yes] [--dry-run]           use a running server, or download and start the recommended one
 //   loadout extension                    build and install the @loadout VS Code chat participant
 //   loadout setup                        one-time machine setup: PATH, local model, extension, then doctor
 //   loadout doctor [--json]              check the CLIs, their sign-ins and the local model
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { once } from 'node:events';
+import { createInterface } from 'node:readline/promises';
 import { homedir, platform, arch, totalmem } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const LOADOUT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const LOCAL_CONFIG = join(homedir(), '.config', 'loadout', 'local.json');
@@ -20,7 +24,10 @@ const MANAGED = '# managed by loadout: rerun `loadout model` to update';
 
 const read = (p) => readFileSync(p, 'utf8');
 const template = (name) => read(join(LOADOUT, 'template', name));
-const which = (name) => (process.env.PATH || '').split(delimiter).map((d) => join(d, name)).find(existsSync);
+// On Windows, commands are found with one of PATHEXT's extensions (claude.cmd, codex.exe).
+const EXTS = platform() === 'win32' ? ['', ...(process.env.PATHEXT || '.EXE;.CMD;.BAT').toLowerCase().split(';')] : [''];
+const which = (name) => (process.env.PATH || '').split(delimiter).flatMap((d) => EXTS.map((e) => join(d, name + e))).find(existsSync);
+const MODELS_DIR = join(homedir(), 'models');
 
 // ---------- init ----------
 
@@ -191,11 +198,26 @@ function hardware(overrides) {
   return { gpu, ramGiB };
 }
 
-function recommend(hw) {
+// What to run for this hardware: { hw, tier, image, gpuArgs, serverArgs, native } or { hw, tier: null }.
+function serverPlan(hw) {
   const { tiers, llamaCppBuild } = JSON.parse(read(join(LOADOUT, 'local-llm/models.json')));
   const vram = hw.gpu?.vramGiB || 0;
   const tier = tiers.find((t) => vram >= t.minVramGiB && hw.ramGiB >= (t.minRamGiB || 0));
-  console.log(`Hardware: ${hw.gpu ? `${hw.gpu.vendor} GPU, ${vram.toFixed(1)} GiB usable VRAM` : 'no GPU found'}, ${hw.ramGiB.toFixed(0)} GiB RAM`);
+  if (!tier) return { hw, tier: null };
+  const vendor = hw.gpu?.vendor;
+  const serverArgs = ['--alias', tier.alias, ...(vendor && vendor !== 'other' ? ['-ngl', '99'] : []), '-c', String(tier.ctx),
+    '-fa', 'on', '-ctk', 'q8_0', '-ctv', 'q8_0', '--jinja', ...tier.args];
+  const [image, gpuArgs] = { nvidia: ['server-cuda', ['--gpus', 'all']], amd: ['server-vulkan', ['--device', '/dev/dri']] }[vendor] || ['server', []];
+  return { hw, tier, native: vendor === 'apple', image: `ghcr.io/ggml-org/llama.cpp:${image}-${llamaCppBuild}`, gpuArgs, serverArgs };
+}
+
+const CONTAINER = 'loadout-llm';
+const dockerArgs = (p) => ['run', '-d', '--name', CONTAINER, '--restart', 'unless-stopped', ...p.gpuArgs, '-v', `${MODELS_DIR}:/models:ro`,
+  '-p', '127.0.0.1:8080:8080', p.image, '-m', `/models/${p.tier.file}`, ...p.serverArgs, '--host', '0.0.0.0', '--port', '8080'];
+
+function describe(p) {
+  const { hw, tier } = p;
+  console.log(`Hardware: ${hw.gpu ? `${hw.gpu.vendor} GPU, ${hw.gpu.vramGiB.toFixed(1)} GiB usable VRAM` : 'no GPU found'}, ${hw.ramGiB.toFixed(0)} GiB RAM`);
   if (!tier) {
     console.log('\nRecommendation: no local model. Nothing useful fits; let the frontier tools do everything, and use');
     console.log('Claude Haiku (ask_claude with model "haiku") for the cheap jobs.');
@@ -204,20 +226,111 @@ function recommend(hw) {
   console.log(`\nRecommendation: ${tier.model} (${tier.file}, ${tier.sizeGB} GB), ${tier.ctx / 1024}K context`);
   console.log(`  ${tier.note}`);
   console.log(`  ${tier.measured ? `Measured: ${tier.measured}` : 'Not benchmarked on this tier yet: run local-llm/bench.sh after setup.'}`);
-  const flags = [`--alias ${tier.alias}`, '-ngl 99', `-c ${tier.ctx}`, '-fa on -ctk q8_0 -ctv q8_0 --jinja', ...tier.args].join(' ');
-  if (existsSync(join(homedir(), 'models', tier.file))) console.log(`\n1. Download: already in ~/models/${tier.file}`);
+}
+
+function recommend(hw) {
+  const p = serverPlan(hw);
+  describe(p);
+  if (!p.tier) return;
+  const { tier } = p;
+  if (existsSync(join(MODELS_DIR, tier.file))) console.log(`\n1. Download: already in ~/models/${tier.file}`);
   else {
     console.log('\n1. Download:');
     console.log(`   mkdir -p ~/models && curl -L -C - -o ~/models/${tier.file} ${tier.url}`);
     console.log(`   echo "${tier.sha256}  $HOME/models/${tier.file}" | sha256sum -c`);
   }
   console.log('\n2. Run (one server per GPU; stop any other model server first):');
-  const docker = (image, gpuFlags) => `   docker run -d --name llama-server --restart unless-stopped ${gpuFlags}-v ~/models:/models:ro \\\n     -p 127.0.0.1:8080:8080 ghcr.io/ggml-org/llama.cpp:${image}-${llamaCppBuild} \\\n     -m /models/${tier.file} ${flags} --host 0.0.0.0 --port 8080`;
-  if (hw.gpu?.vendor === 'apple') console.log(`   brew install llama.cpp\n   llama-server -m ~/models/${tier.file} ${flags} --port 8080`);
-  else if (hw.gpu?.vendor === 'nvidia') console.log(docker('server-cuda', '--gpus all '));
-  else if (hw.gpu?.vendor === 'amd') console.log(docker('server-vulkan', '--device /dev/dri '));
-  else console.log(docker('server', '').replace(' -ngl 99', ''));
+  if (p.native) console.log(`   brew install llama.cpp\n   llama-server -m ~/models/${tier.file} ${p.serverArgs.join(' ')} --port 8080`);
+  else console.log(`   docker ${dockerArgs(p).join(' ').replace(MODELS_DIR, '~/models')}`);
   console.log('\n3. Configure every tool for it:\n   loadout model --url http://localhost:8080/v1');
+  console.log('\nOr do all three: loadout model --install');
+}
+
+const fileSha = (path) => new Promise((resolve, reject) => {
+  const h = createHash('sha256');
+  createReadStream(path).on('data', (d) => h.update(d)).on('error', reject).on('end', () => resolve(h.digest('hex')));
+});
+
+// Resumes a .partial file, verifies the checksum, then renames it into place.
+export { serverPlan, dockerArgs };
+
+export async function download(url, dest, sha256, log = console.log) {
+  if (existsSync(dest)) {
+    log(`  checking ${dest}…`);
+    if (await fileSha(dest) === sha256) return log('  already downloaded and verified');
+    throw new Error(`${dest} exists but its checksum doesn't match; move it aside and rerun`);
+  }
+  mkdirSync(dirname(dest), { recursive: true });
+  const part = `${dest}.partial`;
+  let have = existsSync(part) ? statSync(part).size : 0;
+  const res = await fetch(url, { headers: have ? { range: `bytes=${have}-` } : {} });
+  if (have && res.status !== 206) have = 0;
+  if (!res.ok) throw new Error(`download failed: HTTP ${res.status} from ${url}`);
+  const total = have + Number(res.headers.get('content-length') || 0);
+  const out = createWriteStream(part, { flags: have ? 'a' : 'w' });
+  let got = have, shown = -1;
+  if (have) log(`  resuming at ${(have / 1e9).toFixed(1)} GB`);
+  for await (const chunk of res.body) {
+    if (!out.write(chunk)) await once(out, 'drain');
+    got += chunk.length;
+    const pct = total ? Math.floor((got / total) * 20) * 5 : -1;
+    if (pct > shown) { shown = pct; log(`  ${pct}% (${(got / 1e9).toFixed(1)} of ${(total / 1e9).toFixed(1)} GB)`); }
+  }
+  await new Promise((resolve) => out.end(resolve));
+  log('  verifying checksum…');
+  if (await fileSha(part) !== sha256) { unlinkSync(part); throw new Error('checksum mismatch: the download was corrupted, rerun to fetch it again'); }
+  renameSync(part, dest);
+}
+
+async function confirm(question, flags) {
+  if (flags.yes) return true;
+  if (!process.stdin.isTTY) throw new Error('needs confirmation: rerun with --yes');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question(`${question} [y/N] `);
+  rl.close();
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+// Makes sure this machine has a local model: use one that's already running, or download and start one.
+async function install(flags) {
+  for (const [name, url] of CANDIDATES) {
+    if (await listModels(url)) {
+      console.log(`A model server is already running (${name}, ${url}); configuring it.\n`);
+      return model({ positional: [], flags: { ...flags, url, install: undefined } });
+    }
+  }
+  const p = serverPlan(hardware(flags));
+  describe(p);
+  if (!p.tier) return;
+  const dest = join(MODELS_DIR, p.tier.file);
+  if (p.native) {
+    console.log(`\nOn a Mac, Docker can't reach the GPU, so run llama.cpp natively:\n  brew install llama.cpp\n  llama-server -m ${dest} ${p.serverArgs.join(' ')} --port 8080\nthen: loadout model`);
+    if (!existsSync(dest) && await confirm(`\nDownload the model now (${p.tier.sizeGB} GB to ~/models)?`, flags)) await download(p.tier.url, dest, p.tier.sha256);
+    return;
+  }
+  if (!which('docker')) throw new Error('Docker runs the model server and is not installed: https://docs.docker.com/engine/install/ (then rerun)');
+  const steps = [existsSync(dest) ? `use ~/models/${p.tier.file} (already downloaded)` : `download ${p.tier.sizeGB} GB to ~/models/${p.tier.file}`,
+    `start a llama.cpp server in Docker (container "${CONTAINER}", port 8080, restarts with the machine)`, 'configure fusion, Codex and VS Code for it'];
+  console.log(`\nThis will:\n${steps.map((x, i) => `  ${i + 1}. ${x}`).join('\n')}`);
+  if (flags['dry-run']) return console.log(`\nDry run. The server command would be:\n  docker ${dockerArgs(p).join(' ')}`);
+  if (!(await confirm('\nGo ahead?', flags))) return console.log('Nothing changed.');
+  console.log('\n1. Model');
+  await download(p.tier.url, dest, p.tier.sha256);
+  console.log('\n2. Server');
+  spawnSync('docker', ['rm', '-f', CONTAINER], { stdio: 'ignore' });
+  const run = spawnSync('docker', dockerArgs(p), { encoding: 'utf8' });
+  if (run.status !== 0) throw new Error(`docker run failed: ${(run.stderr || run.stdout).trim()}`);
+  process.stdout.write('  loading the model');
+  const start = Date.now();
+  while (!(await fetch('http://localhost:8080/health').then((r) => r.ok, () => false))) {
+    if (Date.now() - start > 600_000) throw new Error(`the server didn't come up in 10 minutes: docker logs ${CONTAINER}`);
+    const state = spawnSync('docker', ['inspect', '-f', '{{.State.Running}}', CONTAINER], { encoding: 'utf8' }).stdout.trim();
+    if (state !== 'true') throw new Error(`the server stopped while loading: docker logs ${CONTAINER}`);
+    process.stdout.write('.');
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  console.log(` ready in ${Math.round((Date.now() - start) / 1000)} s\n\n3. Configure`);
+  await model({ positional: [], flags: { url: 'http://localhost:8080/v1' } });
 }
 
 function writeCodexProfile(local) {
@@ -252,6 +365,7 @@ function writeVsCodeModel(local) {
 async function model(args) {
   const f = args.flags;
   if (f.recommend) return recommend(hardware(f));
+  if (f.install) return install(f);
 
   let url = f.url?.replace(/\/$/, '');
   let models;
@@ -313,36 +427,42 @@ const quiet = (bin, args) => {
 
 async function checks() {
   const out = [];
-  const add = (name, ok, detail, fix, optional = false) => out.push({ name, ok, detail, fix: ok ? null : fix, optional });
+  // run: a command that fixes it, for `setup` and the extension's Set Up button (null when it needs a person).
+  const add = (name, ok, detail, fix, run = null, optional = false) => out.push({ name, ok, detail, fix: ok ? null : fix, run: ok ? null : run, optional });
+  const npm = which('npm');
 
   const claude = which('claude');
-  if (!claude) add('Claude Code CLI', false, 'not installed', 'npm install -g @anthropic-ai/claude-code, then run `claude` once to sign in');
+  if (!claude) add('Claude Code CLI', false, 'not installed', npm ? 'npm install -g @anthropic-ai/claude-code, then claude auth login' : 'install Node.js (it brings npm), then npm install -g @anthropic-ai/claude-code',
+    npm ? 'npm install -g @anthropic-ai/claude-code && claude auth login' : null);
   else {
     let status = {};
     try { status = JSON.parse(quiet(claude, ['auth', 'status']).out); } catch {}
-    add('Claude Code CLI', !!status.loggedIn, status.loggedIn ? `signed in (${status.authMethod})` : 'not signed in', 'run `claude` and sign in with your Claude account');
+    add('Claude Code CLI', !!status.loggedIn, status.loggedIn ? `signed in (${status.authMethod})` : 'not signed in', 'claude auth login', `"${claude}" auth login`);
   }
 
   const codex = which('codex') || (existsSync(CODEX_BUNDLED) ? CODEX_BUNDLED : null);
-  if (!codex) add('Codex CLI', false, 'not installed', 'npm install -g @openai/codex, then `codex login`');
+  if (!codex) add('Codex CLI', false, 'not installed', npm ? 'npm install -g @openai/codex, then codex login' : 'install Node.js (it brings npm), then npm install -g @openai/codex',
+    npm ? 'npm install -g @openai/codex && codex login' : null);
   else {
     const s = quiet(codex, ['login', 'status']);
-    add('Codex CLI', s.ok && /logged in/i.test(s.out), s.out.trim().split('\n')[0] || 'not signed in', '`codex login` and sign in with ChatGPT');
+    // Codex can print warnings first; the status is the line that mentions logging in.
+    const line = s.out.split('\n').find((l) => /logged in|not logged/i.test(l)) || 'not signed in';
+    add('Codex CLI', s.ok && /^\s*logged in/i.test(line), line.trim(), 'codex login', `"${codex}" login`);
   }
 
   const local = existsSync(LOCAL_CONFIG) ? JSON.parse(read(LOCAL_CONFIG)) : null;
-  if (!local) add('Local model', false, 'not configured', '`loadout model` (or "Loadout: Set Up Local Model" in VS Code)');
+  if (!local) add('Local model', false, 'not configured', 'loadout model --install (or "Loadout: Set Up Local Model" in VS Code)', 'loadout model --install');
   else {
     const models = await listModels(local.url);
     add('Local model', !!models && local.toolCalling, models ? `${local.model} at ${local.url}${local.toolCalling ? '' : ', but tool calls failed'}` : `offline at ${local.url}`,
-      models ? 'serve it with tool calling on (llama-server needs --jinja), then `loadout model`' : 'start the model server (homelab: ./scripts/lab-mode.py llm --wait), or `loadout model` to pick another');
+      models ? 'serve it with tool calling on (llama-server needs --jinja), then loadout model' : 'start your model server (homelab: ./scripts/lab-mode.py llm --wait), or loadout model --install');
   }
   const profile = join(homedir(), '.codex', 'local.config.toml');
-  add('Codex local profile', existsSync(profile), existsSync(profile) ? profile : 'missing: @loadout runs local work through it', '`loadout model`');
+  add('Codex local profile', existsSync(profile), existsSync(profile) ? profile : 'missing: @loadout runs local work through it', 'loadout model', local ? 'loadout model' : null);
 
   const nodeVersion = quiet('node', ['--version']);
   const major = Number((nodeVersion.out.match(/v(\d+)/) || [])[1] || 0);
-  add('Node 22+ on PATH', major >= 22, nodeVersion.ok ? nodeVersion.out.trim() : 'not found', 'install Node 22 or newer (only needed for the fusion MCP server in repos)', true);
+  add('Node 22+ on PATH', major >= 22, nodeVersion.ok ? nodeVersion.out.trim() : 'not found', 'install Node 22 or newer (only needed for the fusion MCP server in repos)', null, true);
   return out;
 }
 
@@ -362,12 +482,17 @@ async function setup(args) {
   else if ((process.env.PATH || '').split(delimiter).includes(bin)) { mkdirSync(bin, { recursive: true }); symlinkSync(join(LOADOUT, 'bin', 'loadout.mjs'), link); console.log(`  added ${link}`); }
   else console.log(`  skip  ${bin} is not on PATH; run this CLI as node ${join(LOADOUT, 'bin', 'loadout.mjs')}`);
   console.log('\n2. Local model');
-  await model({ positional: [], flags: {} }).catch((e) => console.log(`  ${e.message}`));
+  await install(args.flags).catch((e) => console.log(`  ${e.message}`));
   console.log('\n3. VS Code extension');
   if (existsSync(join(LOADOUT, 'extension', 'build.mjs'))) extension();
   else console.log('  ok    running from the installed extension');
   console.log('\n4. Check');
   await doctor({ flags: {} });
+  const fixable = (await checks()).filter((c) => !c.ok && c.run && !c.run.startsWith('loadout '));
+  if (fixable.length && await confirm(`\nRun the ${fixable.length} fix${fixable.length > 1 ? 'es' : ''} above now?`, args.flags)) {
+    for (const c of fixable) { console.log(`\n$ ${c.run}`); spawnSync(c.run, { shell: true, stdio: 'inherit' }); }
+    await doctor({ flags: {} });
+  }
 }
 
 // ---------- main ----------
@@ -378,15 +503,18 @@ function parse(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) { out.positional.push(a); continue; }
     const [k, v] = a.slice(2).split('=');
-    out.flags[k] = v ?? (argv[i + 1] && !argv[i + 1].startsWith('--') && !['recommend', 'no-pstack', 'json'].includes(k) ? argv[++i] : true);
+    out.flags[k] = v ?? (argv[i + 1] && !argv[i + 1].startsWith('--') && !['recommend', 'no-pstack', 'json', 'install', 'yes', 'dry-run'].includes(k) ? argv[++i] : true);
   }
   return out;
 }
 
-const [cmd, ...rest] = process.argv.slice(2);
-const commands = { init, model, extension, setup, doctor };
-if (!commands[cmd]) {
-  console.log(read(fileURLToPath(import.meta.url)).split('\n').slice(1).filter((l, i, a) => a.slice(0, i + 1).every((x) => x.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
-  process.exit(cmd ? 2 : 0);
+// Run only as a command, not when imported (tests import download). argv[1] may be a symlink in ~/.local/bin.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  const [cmd, ...rest] = process.argv.slice(2);
+  const commands = { init, model, extension, setup, doctor };
+  if (!commands[cmd]) {
+    console.log(read(fileURLToPath(import.meta.url)).split('\n').slice(1).filter((l, i, a) => a.slice(0, i + 1).every((x) => x.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
+    process.exit(cmd ? 2 : 0);
+  }
+  try { await commands[cmd](parse(rest)); } catch (e) { console.error(`loadout ${cmd}: ${e.message}`); process.exit(1); }
 }
-try { await commands[cmd](parse(rest)); } catch (e) { console.error(`loadout ${cmd}: ${e.message}`); process.exit(1); }
