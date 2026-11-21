@@ -1,4 +1,4 @@
-# fuseway
+# <img src="brand/icon-512.png" width="40" align="center" alt=""> fuseway
 
 Fuseway routes coding requests and runs repository missions with a CEO and delegated agents. Local models, Claude Code, Codex, and opt-in Grok Build use your existing model connections. Type `@fuseway` in VS Code chat, or run the [agent company](company/README.md) from the CLI. Replies and mission records identify the models that did the work.
 

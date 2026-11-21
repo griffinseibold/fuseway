@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1.1" fill="#f6f4ef" fill-opacity=".07"/>
+    </pattern>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(820 330) scale(260)">
+      <stop offset="0" stop-color="#ef6a2e" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#ef6a2e" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="640" fill="#161513"/>
+  <rect width="1280" height="640" fill="url(#dots)"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+
+  <!-- lockup -->
+  <g transform="translate(88 96)">
+    <rect width="72" height="72" rx="16" fill="#1d1c1a" stroke="#2e2b27"/>
+    <g transform="scale(.5625)">
+      <circle cx="50" cy="64" r="19" fill="#ef6a2e" fill-opacity=".18"/>
+      <g fill="none" stroke-width="8" stroke-linecap="round">
+        <path d="M50 64C72 64 74 36 102 36" stroke="#6f6a61"/>
+        <path d="M50 64C72 64 74 92 102 92" stroke="#6f6a61"/>
+        <path d="M24 64H104" stroke="#f6f4ef"/>
+      </g>
+      <circle cx="50" cy="64" r="10" fill="#ef6a2e"/>
+    </g>
+    <text x="96" y="52" font-family="Geist" font-weight="600" font-size="52" letter-spacing="-2" fill="#ebe7de">fuseway</text>
+  </g>
+
+  <text font-family="Geist" font-weight="600" font-size="58" letter-spacing="-2.4" fill="#ebe7de">
+    <tspan x="88" y="300">An agent company</tspan>
+    <tspan x="88" y="368" fill="#a8a397">where the best</tspan>
+    <tspan x="88" y="436" fill="#a8a397">model leads.</tspan>
+  </text>
+  <text x="88" y="540" font-family="Geist Mono" font-size="20" fill="#7f7a70">dispatcher · CEO · builders · reviewers</text>
+
+  <!-- route -->
+  <g fill="none" stroke-linecap="round" stroke-width="10">
+    <path d="M820 330C900 330 905 170 1010 170" stroke="#4a4640"/>
+    <path d="M820 330C900 330 905 430 1010 430" stroke="#4a4640"/>
+    <path d="M820 330C910 330 905 530 1010 530" stroke="#4a4640" stroke-dasharray="2 18"/>
+    <path d="M640 330H1010" stroke="#ebe7de"/>
+  </g>
+  <circle cx="820" cy="330" r="30" fill="#ef6a2e" fill-opacity=".2"/>
+  <circle cx="820" cy="330" r="15" fill="#ef6a2e"/>
+  <g font-family="Geist Mono" font-size="19" fill="#a8a397">
+    <text x="640" y="300">request</text>
+    <text x="1032" y="176" fill="#ebe7de">Claude Code</text>
+    <text x="1032" y="201" font-size="15" fill="#7f7a70">most headroom</text>
+    <text x="1032" y="336" fill="#ebe7de">local model</text>
+    <text x="1032" y="361" font-size="15" fill="#7f7a70">no quota</text>
+    <text x="1032" y="436" fill="#ebe7de">Codex</text>
+    <text x="1032" y="461" font-size="15" fill="#7f7a70">most headroom</text>
+    <text x="1032" y="536" fill="#ebe7de">Grok</text>
+    <text x="1032" y="561" font-size="15" fill="#7f7a70">opt-in</text>
+    <text x="820" y="395" text-anchor="middle" font-size="15" fill="#ef6a2e">dispatcher</text>
+  </g>
+</svg>

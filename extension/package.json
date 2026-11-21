@@ -3,8 +3,9 @@
   "publisher": "griffinseibold",
   "displayName": "Fuseway",
   "description": "@fuseway chat participant: routes requests to a local model, Claude Code, Codex, or an explicitly selected Grok Build CLI.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "license": "MIT",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.100.0"
   },

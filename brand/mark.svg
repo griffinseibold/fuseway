@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 20 96 88">
+  <style>
+    .main { stroke: #1d1c1a; } .side { stroke: #a8a397; }
+    @media (prefers-color-scheme: dark) { .main { stroke: #ebe7de; } .side { stroke: #6f6a61; } }
+  </style>
+  <circle cx="50" cy="64" r="19" fill="#ef6a2e" fill-opacity=".18"/>
+  <g fill="none" stroke-width="8" stroke-linecap="round">
+    <path class="side" d="M50 64C72 64 74 36 102 36"/>
+    <path class="side" d="M50 64C72 64 74 92 102 92"/>
+    <path class="main" d="M24 64H104"/>
+  </g>
+  <circle cx="50" cy="64" r="10" fill="#ef6a2e"/>
+</svg>

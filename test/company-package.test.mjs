@@ -17,7 +17,9 @@ test('extracted VSIX CLI initializes, reports status and executes company throug
     const target=join(temp,name);mkdirSync(dirname(target),{recursive:true});writeFileSync(target,zip.subarray(begin,begin+size));offset=begin+size;
   }
   const extension=join(temp,'extension'),cli=join(extension,'bin/fuseway.mjs');
-  assert.equal(JSON.parse(readFileSync(join(extension,'package.json'))).version,'0.4.0');
+  assert.equal(JSON.parse(readFileSync(join(extension,'package.json'))).version,JSON.parse(readFileSync(join(repo,'extension/package.json'))).version);
+  assert.ok(existsSync(join(extension,'icon.png')));
+  assert.match(readFileSync(join(temp,'extension.vsixmanifest'),'utf8'),/<Icon>extension\/icon\.png<\/Icon>/);
   assert.ok(existsSync(join(extension,'company/controller.mjs')));assert.ok(existsSync(join(extension,'company/README.md')));
   const root=join(temp,'repo');mkdirSync(root);
   let sequence=0;

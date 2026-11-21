@@ -11,7 +11,7 @@ const DIR = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(DIR, 'package.json'), 'utf8'));
 const out = process.argv[2] || join(DIR, `${pkg.name}.vsix`);
 const REPO = join(DIR, '..');
-const SHIP = ['package.json', 'extension.js', 'router.js', 'rules.json', 'skills.json', 'learner.js', 'route-cases.json', 'README.md'];
+const SHIP = ['package.json', 'extension.js', 'router.js', 'rules.json', 'skills.json', 'learner.js', 'route-cases.json', 'README.md', 'icon.png'];
 // The fuseway CLI and everything `fuseway init` installs, at the same paths as in the repo, so the bundled CLI
 // finds them next to itself.
 const BUNDLE = ['company', 'LICENSE', 'bin/fuseway.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',
@@ -25,11 +25,13 @@ const manifest = `<?xml version="1.0" encoding="utf-8"?>
     <Identity Language="en-US" Id="${pkg.name}" Version="${pkg.version}" Publisher="${pkg.publisher}" />
     <DisplayName>${pkg.displayName}</DisplayName>
     <Description xml:space="preserve">${pkg.description}</Description>
-    <Properties><Property Id="Microsoft.VisualStudio.Code.Engine" Value="${pkg.engines.vscode}" /></Properties>
+    <Properties><Property Id="Microsoft.VisualStudio.Code.Engine" Value="${pkg.engines.vscode}" /></Properties>${pkg.icon ? `
+    <Icon>extension/${pkg.icon}</Icon>` : ''}
   </Metadata>
   <Installation><InstallationTarget Id="Microsoft.VisualStudio.Code" /></Installation>
   <Dependencies />
-  <Assets><Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" /></Assets>
+  <Assets><Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" />${pkg.icon ? `
+    <Asset Type="Microsoft.VisualStudio.Services.Icons.Default" Path="extension/${pkg.icon}" Addressable="true" />` : ''}</Assets>
 </PackageManifest>
 `;
 const git = (...args) => { try { return execFileSync('git', args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
