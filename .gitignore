@@ -1,0 +1,5 @@
+.env
+.env.*
+*.gguf
+.agents/context/handoff.md
+node_modules/

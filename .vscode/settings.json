@@ -1,0 +1,31 @@
+{
+  // --- Agent instructions: one AGENTS.md for every tool ---
+  "chat.useAgentsMdFile": true,
+  "github.copilot.chat.codeGeneration.useInstructionFiles": true,
+  "chat.promptFiles": true,
+
+  // --- Local model in the Copilot Chat model picker (BYOK, no Copilot plan needed) ---
+  // llama.cpp's llama-server exposes an OpenAI-compatible API (see local-llm/).
+  // VS Code renames BYOK settings now and then: tasks/tune-local-model.md checks these keys against your installed version.
+  "github.copilot.chat.customOAIModels": {
+    "qwen3.8-27b": {
+      "name": "Qwen3.8 27B (local)",
+      "url": "http://localhost:8080/v1",
+      "toolCalling": true,
+      "vision": false,
+      "thinking": true,
+      "maxInputTokens": 49152,
+      "maxOutputTokens": 8192,
+      "requiresAPIKey": false
+    }
+  },
+
+  // --- Keep agents and search out of noise ---
+  "search.exclude": {
+    "**/*.gguf": true,
+    "**/node_modules": true
+  },
+  "files.watcherExclude": {
+    "**/*.gguf": true
+  }
+}

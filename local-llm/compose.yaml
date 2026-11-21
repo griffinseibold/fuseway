@@ -1,0 +1,27 @@
+# llama.cpp server on the RX 6800 through the Vulkan backend (no ROCm needed).
+# Start: docker compose -f local-llm/compose.yaml up -d
+# Models live in ~/models (outside the repo).
+services:
+  llama:
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan
+    restart: unless-stopped
+    devices:
+      - /dev/dri:/dev/dri
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${HOME}/models:/models:ro
+    # Profile A (default): dense 27B at ~3.5 bits, fully on the GPU. Best quality.
+    command: >
+      -m /models/${MODEL_FILE:-Qwen3.8-27B-UD-IQ3_XXS.gguf}
+      --alias qwen3.8-27b
+      --host 0.0.0.0 --port 8080
+      -ngl 99
+      -c ${CTX:-49152}
+      -fa on --cache-type-k q8_0 --cache-type-v q8_0
+      --jinja
+    # Profile B: 35B-A3B MoE, with experts offloaded to system RAM. Faster tokens, weaker code.
+    # Swap in for the command above and tune --n-cpu-moe (more = more in RAM):
+    #   -m /models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf --alias qwen3.6-35b-a3b
+    #   --host 0.0.0.0 --port 8080 -ngl 99 --n-cpu-moe 24 -c 65536
+    #   -fa on --cache-type-k q8_0 --cache-type-v q8_0 --jinja

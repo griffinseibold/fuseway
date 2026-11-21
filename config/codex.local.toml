@@ -1,0 +1,10 @@
+# Append to ~/.codex/config.toml, then run: codex --profile local
+# Points the Codex CLI at the local llama.cpp server so cheap jobs don't touch your ChatGPT quota.
+[model_providers.llamacpp]
+name = "llama.cpp (local)"
+base_url = "http://localhost:8080/v1"
+wire_api = "chat"   # change to "responses" if your llama.cpp build serves /v1/responses
+
+[profiles.local]
+model_provider = "llamacpp"
+model = "qwen3.8-27b"
