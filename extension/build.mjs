@@ -13,7 +13,7 @@ const REPO = join(DIR, '..');
 const SHIP = ['package.json', 'extension.js', 'router.js', 'rules.json', 'learner.js', 'route-cases.json', 'README.md'];
 // The fuseway CLI and everything `fuseway init` installs, at the same paths as in the repo, so the bundled CLI
 // finds them next to itself.
-const BUNDLE = ['bin/fuseway.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',
+const BUNDLE = ['LICENSE', 'bin/fuseway.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',
   '.agents/tasks/refresh-context.md', '.agents/skills', 'local-llm/models.json', 'local-llm/bench.sh'];
 const walk = (rel) => (statSync(join(REPO, rel)).isDirectory()
   ? readdirSync(join(REPO, rel)).flatMap((f) => walk(join(rel, f))) : [rel.split(sep).join('/')]);

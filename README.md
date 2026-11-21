@@ -55,3 +55,6 @@ Then fill in the **Project** and **Commands** sections of `AGENTS.md`.
 
 ## Credits
 Skills: [pstack](https://github.com/backnotprop/pstack) by Lauren Tan (poteto), MIT, bundled. [Superpowers](https://github.com/obra/superpowers) by Jesse Vincent, MIT, downloaded by `fuseway init --skills superpowers`. Ideas: [PAL MCP](https://github.com/BeehiveInnovations/pal-mcp-server), [Ruler](https://github.com/intellectronica/ruler).
+
+## License
+MIT. See [LICENSE](LICENSE).

@@ -4,6 +4,7 @@
   "displayName": "Fuseway",
   "description": "@fuseway chat participant: routes each request to the local model, Claude Code or Codex, and spends subscription quota only when needed.",
   "version": "0.3.0",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.100.0"
   },
