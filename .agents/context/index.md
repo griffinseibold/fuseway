@@ -6,4 +6,5 @@ Rules: one topic per file, short, concepts over line numbers, and update it in t
 
 | File | What it covers |
 |---|---|
+| [local-llm.md](local-llm.md) | Which local model and why (benchmarks), how to start it in homelab, and the Copilot and Codex settings |
 | [fusion.md](fusion.md) | The MCP server that hands chat work to the local model, Claude Code and Codex, and logs usage |

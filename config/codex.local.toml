@@ -1,10 +1,11 @@
 # Append to ~/.codex/config.toml, then run: codex --profile local
-# Points the Codex CLI at the local llama.cpp server so cheap jobs don't touch your ChatGPT quota.
+# Points the Codex CLI at the homelab llama-server so cheap jobs don't touch your ChatGPT quota.
+# The server only runs on demand: start it with `./scripts/lab-mode.py llm --wait` in the homelab repo.
 [model_providers.llamacpp]
 name = "llama.cpp (local)"
-base_url = "http://localhost:8080/v1"
-wire_api = "chat"   # change to "responses" if your llama.cpp build serves /v1/responses
+base_url = "http://llm.localhost:8080/v1"
+wire_api = "responses"   # llama-server serves /v1/responses; tested with Codex 0.167
 
 [profiles.local]
 model_provider = "llamacpp"
-model = "qwen3.8-27b"
+model = "local"          # llama-server serves one model and ignores the name

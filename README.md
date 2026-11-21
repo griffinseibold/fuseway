@@ -7,7 +7,7 @@ A blank starting repo that sets up Claude Code, Codex and Copilot Chat (with a l
 git clone <this repo> my-project && cd my-project
 rm -rf .git && git init -b main
 ./scripts/bootstrap.sh                          # installs pstack skills
-docker compose -f local-llm/compose.yaml up -d  # local model on :8080
+# local model: served by the homelab repo at http://llm.localhost:8080/v1
 code .                                          # accept the recommended extensions
 ```
 Then fill in the **Project** and **Commands** sections of `AGENTS.md`.
@@ -20,7 +20,7 @@ Then fill in the **Project** and **Commands** sections of `AGENTS.md`.
 | `.agents/skills/` | pstack (installed by bootstrap, committed). Codex reads it directly, and it's symlinked into `.claude/` and `.github/` |
 | `fusion/` | MCP server: `ask_local`, `ask_claude`, `ask_codex`, `critique`, so one chat can use every model. See `.agents/context/fusion.md` |
 | `.vscode/` | Settings, the local model in Copilot's picker, and recommended extensions |
-| `local-llm/` | llama.cpp server (Vulkan) for the RX 6800 |
+| `local-llm/` | `bench.sh`: speed, context-fit and tool-call checks for a local model. The server itself runs in the homelab repo |
 | `config/codex.local.toml` | Codex profile that uses the local model |
 | `tasks/` | Reusable jobs to point an agent at: `tune-local-model.md`, `refresh-context.md` |
 
