@@ -50,7 +50,7 @@ test('an uploaded PDF is saved, named in the prompt, readable by Claude, and rou
   assert.ok(saved, opts.prompt);
   assert.deepEqual(readFileSync(saved), pdf);
   assert.deepEqual(opts.addDirs, [dirname(saved)]);
-  assert.match(opts.prompt, /^what does this say\?\n\nThe user attached this file/);
+  assert.match(opts.prompt, /^You are the Explainer\.[^\n]*\n\nRequest: what does this say\?\n\nThe user attached this file/);
 });
 
 test('workspace files are named by absolute path without extra directories; instruction files are skipped', async () => {
@@ -81,10 +81,10 @@ test('the file open in the editor is mentioned, not attached, and does not count
   assert.deepEqual([...opts.addDirs], ['/home/u/Downloads']);
 });
 
-test('no attachments leaves the prompt unchanged', async () => {
+test('no attachments adds nothing after the request', async () => {
   const c = chat(() => []);
   await c.execute();
-  assert.equal(c.calls[0].opts.prompt, 'what does this say?');
+  assert.match(c.calls[0].opts.prompt, /\n\nRequest: what does this say\?$/);
 });
 
 test('PDF and image rule pins Claude; text files keep normal routing', () => {

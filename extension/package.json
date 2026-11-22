@@ -2,7 +2,7 @@
   "name": "fuseway",
   "publisher": "griffinseibold",
   "displayName": "Fuseway",
-  "description": "@fuseway chat participant: routes requests to a local model, Claude Code, Codex, or an explicitly selected Grok Build CLI.",
+  "description": "@fuseway chat participant: gives every request a role (planner, builder, debugger, reviewer, explainer) and sends it to the Claude or OpenAI model that role suits. Optional local model first.",
   "version": "0.4.1",
   "license": "MIT",
   "icon": "icon.png",
@@ -19,9 +19,29 @@
         "id": "fuseway.router",
         "name": "fuseway",
         "fullName": "Fuseway",
-        "description": "Picks the local model, Claude or Codex; Grok is available on request",
+        "description": "Plans, builds, debugs, reviews or explains, each with the Claude or OpenAI model that suits it",
         "isSticky": true,
         "commands": [
+          {
+            "name": "plan",
+            "description": "Planner: Design, architecture and plans, before any code (read-only)"
+          },
+          {
+            "name": "debug",
+            "description": "Debugger: Bugs, errors, failing tests and crashes"
+          },
+          {
+            "name": "review",
+            "description": "Reviewer: Code review, critique and second opinions (read-only)"
+          },
+          {
+            "name": "explain",
+            "description": "Explainer: Questions about how the code works (read-only)"
+          },
+          {
+            "name": "build",
+            "description": "Builder: Everything else: implement, change and fix"
+          },
           {
             "name": "local",
             "description": "Use the local model (free)"
@@ -64,6 +84,21 @@
     "configuration": {
       "title": "Fuseway",
       "properties": {
+        "fuseway.routing": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "roles",
+            "local-first"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "roles until a local model is set up with Fuseway: Set Up Local Model, then local-first",
+            "Each role picks Claude or Codex and its model. No local model, no paid routing calls.",
+            "The local model takes what it can; Claude Haiku double-checks; frontier work goes to Claude or Codex by headroom."
+          ],
+          "description": "How @fuseway picks a backend. Every mode gives each request a role, whose instructions and read-only setting apply."
+        },
         "fuseway.allowEdits": {
           "type": "boolean",
           "default": true,
@@ -77,7 +112,7 @@
             "haiku"
           ],
           "default": "sonnet",
-          "description": "Claude model for frontier work."
+          "description": "Claude model in local-first mode. In roles mode each role picks its own (roles.json; a repo can change it in .agents/routing.json)."
         },
         "fuseway.codexEffort": {
           "type": "string",
@@ -87,7 +122,7 @@
             "high"
           ],
           "default": "medium",
-          "description": "Codex reasoning effort for frontier work."
+          "description": "Codex reasoning effort in local-first mode. In roles mode each role picks its own."
         },
         "fuseway.frontier": {
           "type": "string",
@@ -98,7 +133,7 @@
             "grok"
           ],
           "default": "balance",
-          "description": "balance: send frontier work to whichever subscription has more room left after its reserve, counting both its 5-hour and weekly windows. grok explicitly selects Grok Build; its quota is not part of automatic balancing."
+          "description": "balance: in roles mode, use each role's preferred provider; in local-first mode, send frontier work to whichever subscription has more room left after its reserve, counting its 5-hour and weekly windows. Either way a provider out of room hands over to the other. claude or codex: always prefer that one. grok explicitly selects Grok Build; its quota is not part of automatic balancing."
         },
         "fuseway.claudeReserve": {
           "type": "number",
@@ -117,7 +152,7 @@
         "fuseway.learning.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Score routers and agents from outcomes in the background, and switch to a better decision maker when the evidence is clear. Everything stays in ~/.local/state/fuseway/learning.jsonl on this machine."
+          "description": "Local-first mode only: Score routers and agents from outcomes in the background, and switch to a better decision maker when the evidence is clear. Everything stays in ~/.local/state/fuseway/learning.jsonl on this machine."
         },
         "fuseway.learning.dailyPaidTokens": {
           "type": "number",

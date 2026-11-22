@@ -98,8 +98,8 @@ test('a forced backend keeps its choice but still gets the skill', async () => {
   assert.match(calls[0].opts.prompt, /interrogate/);
 });
 
-test('without the skill installed, routing and prompt are unchanged', async () => {
+test('without the skill installed, routing is unchanged and only the role is added', async () => {
   const { calls } = await chat(repoWith([]));
   assert.equal(calls[0].backend, 'local');
-  assert.equal(calls[0].opts.prompt, 'give me a second opinion on this design');
+  assert.match(calls[0].opts.prompt, /^You are the Reviewer\.[^\n]*\n\nRequest: give me a second opinion on this design$/);
 });

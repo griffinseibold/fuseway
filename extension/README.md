@@ -1,6 +1,36 @@
 # Fuseway
 
-`@fuseway` in VS Code's chat routes work between the local model, Claude Code, and Codex. Grok Build is available by explicit selection:
+`@fuseway` in VS Code's chat gives every request a role and sends it to the Claude or OpenAI model that role suits. It runs through the Claude Code and Codex CLIs, signed in to your subscriptions, so installing the extension and signing in to one of them is all the setup it needs.
+
+## Roles
+| Role | Picked for | Does | Model |
+|---|---|---|---|
+| Planner `/plan` | plan, design, architecture, approach, trade-offs | Reads, then writes a plan to approve. Read-only. | Claude Opus (Codex high) |
+| Debugger `/debug` | bugs, errors, failing tests, crashes | Reproduces, finds the root cause, makes the smallest fix, tests it | Codex high (Claude Sonnet) |
+| Reviewer `/review` | review, critique, audit, second opinion | Reports real problems, most severe first. Read-only. | Codex high (Claude Sonnet) |
+| Explainer `/explain` | questions that don't ask for a change | Answers from the code, naming files. Read-only. | Claude Haiku (Codex low) |
+| Builder `/build` | everything else | Makes the smallest change, then runs something to prove it | Claude Sonnet (Codex medium) |
+
+The model in brackets is used when the first provider's CLI isn't installed or its subscription is out of room. Picking a role costs nothing: it's a `/role` command, else the earliest matching phrase, else a question with no edit verb, else Builder. A short follow-up ("make it shorter") keeps the role and resumes the same session; "go ahead" after a plan or review hands that session to the Builder. Each reply's footer shows the role and why it was picked. The full instructions are in [roles.json](roles.json).
+
+**Per repo**, `.agents/routing.json` can change any role field by field, or add a role, with `roles`:
+```json
+{ "roles": [
+  { "id": "plan", "claudeModel": "sonnet" },
+  { "id": "docs", "name": "Writer", "phrases": ["readme", "changelog"], "prefer": "claude", "claudeModel": "haiku",
+    "instructions": "Write short, plain docs that match the project's existing style." }
+] }
+```
+Fields: `name`, `instructions`, `phrases`, `starts` and `unless`, `edits` (false runs read-only), `prefer` (`claude`, `codex` or `balance`), `claudeModel`, `codexEffort`, `codexModel`.
+
+## Routing modes
+`fuseway.routing` picks how a backend is chosen; the role's instructions and read-only setting apply in every mode.
+- **`roles`:** the role picks Claude or Codex and its model, as above. No local model, no routing calls, no background learner.
+- **`local-first`:** a local model takes what it can, as described below. The role still sets the instructions; models come from `fuseway.claudeModel` and `fuseway.codexEffort`.
+- **`auto`** (default): `roles` until **Fuseway: Set Up Local Model** has configured a local model, then `local-first`.
+
+## Local-first mode
+Once a local model is set up, `@fuseway` routes work between it, Claude Code, and Codex. Grok Build is available by explicit selection:
 
 1. Deterministic rules decide first (see below).
 2. Otherwise, your local model classifies it without subscription usage. Simple work stays local.
@@ -11,7 +41,7 @@ Repository work runs through an agent CLI that reads and edits the workspace. A 
 
 Each reply shows the actual model IDs reported by the backend, the observed reasoning effort when available, direct or agent execution, tokens, and routing reason. If model identity is unavailable, it says `unknown` and shows the requested model separately. Claude can report several models in one call. `/usage` and `/stats` group calls by model and execution mode.
 
-## Rules
+### Rules
 **Structural rules** look at the conversation, not the words, and decide on their own:
 
 | Rule | Goes to |
@@ -41,7 +71,7 @@ The catalog doesn't change between requests, so llama-server caches it. Matching
 
 Keywords match whole words; one ending in `*` is a stem (`migrat*` matches "migration").
 
-## It learns which router to trust
+### It learns which router to trust
 `/stats` shows the scoreboard. The decision maker starts as the cascade above. Two other candidates are measured alongside it: **local-only** (no Haiku, so free) and **Haiku alone**. Each candidate's name includes its local model, so a new model starts with no history and has to earn its place.
 
 - **Outcomes, deterministically:** an explicit success or failure phrase in your next message provides an outcome. Moving on or choosing another backend provides no outcome. A thumbs up or down overrides inferred outcomes. Old "moved on" successes no longer train the router. Execution errors and quota failover do not label task difficulty. A local answer's outcome labels what the right call was; frontier answers don't, because they can't show local would have failed.
@@ -54,12 +84,12 @@ Keywords match whole words; one ending in `*` is a stem (`migrat*` matches "migr
 Everything stays in `~/.local/state/fuseway/learning.jsonl` on this machine. Turn it off with `fuseway.learning.enabled`.
 
 ## Commands
-Chat: `/local`, `/claude`, `/codex`, `/grok` force a backend; `/usage` shows both subscription windows and recent calls. `/version` shows the installed extension version, packaged build commit when available, and workspace Git state. `/status` adds the configured local model and subscription usage. Both commands bypass model calls and do not claim the remote is current. `/stats` shows router evidence, model calls, and observed task costs.
-Settings: `fuseway.allowEdits`, `fuseway.claudeModel`, `fuseway.codexEffort`, `fuseway.codexModel` and `fuseway.grokModel` (optional model IDs), `fuseway.frontier`.
+Chat: `/plan`, `/build`, `/debug`, `/review`, `/explain` pick a role. `/local`, `/claude`, `/codex`, `/grok` force a backend; `/usage` shows both subscription windows and recent calls. `/version` shows the installed extension version, packaged build commit when available, and workspace Git state. `/status` adds the configured local model and subscription usage. Both commands bypass model calls and do not claim the remote is current. `/stats` shows router evidence, model calls, and observed task costs.
+Settings: `fuseway.routing`, `fuseway.allowEdits` (off makes every role read-only), `fuseway.claudeModel`, `fuseway.codexEffort`, `fuseway.codexModel` and `fuseway.grokModel` (optional model IDs), `fuseway.frontier`.
 
 Command palette: **Fuseway: Check Setup**, **Fuseway: Set Up Local Model**, **Fuseway: Add to This Repo**.
 
-Needs the `claude` and `codex` CLIs signed in to your subscriptions, and `fuseway model` for the local model.
+Needs the `claude` or `codex` CLI (or both) signed in to your subscription. Local-first mode also needs a local model: **Fuseway: Set Up Local Model**, or `fuseway model`.
 
 ## Connect Grok Build
 

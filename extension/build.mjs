@@ -11,7 +11,7 @@ const DIR = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(DIR, 'package.json'), 'utf8'));
 const out = process.argv[2] || join(DIR, `${pkg.name}.vsix`);
 const REPO = join(DIR, '..');
-const SHIP = ['package.json', 'extension.js', 'router.js', 'rules.json', 'skills.json', 'learner.js', 'route-cases.json', 'README.md', 'icon.png'];
+const SHIP = ['package.json', 'extension.js', 'router.js', 'roles.js', 'roles.json', 'rules.json', 'skills.json', 'learner.js', 'route-cases.json', 'README.md', 'icon.png'];
 // The fuseway CLI and everything `fuseway init` installs, at the same paths as in the repo, so the bundled CLI
 // finds them next to itself.
 const BUNDLE = ['company', 'LICENSE', 'bin/fuseway.mjs', 'template', '.agents/fusion/server.mjs', '.agents/fusion/smoke.mjs',

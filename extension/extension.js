@@ -1,4 +1,5 @@
-// @fuseway: a chat participant that picks the cheapest capable backend per request. Logic lives in router.js.
+// @fuseway: a chat participant that gives each request a role (roles.js) and picks a backend for it: by role in
+// roles mode, or the cheapest capable one, local model first, in local-first mode (router.js).
 // The VSIX also carries the fuseway CLI (bin/fuseway.mjs), run with VS Code's own Node, for setup commands.
 const vscode = require('vscode');
 const { spawn } = require('child_process');
@@ -7,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const r = require('./router');
 const L = require('./learner');
+const Ro = require('./roles');
 
 const FORCED = ['local', 'claude', 'codex', 'grok'];
 const ROOT = fs.existsSync(path.join(__dirname, 'bin', 'fuseway.mjs')) ? __dirname : path.join(__dirname, '..');
@@ -123,6 +125,7 @@ async function handleRequest(request, context, stream, signal) {
   const local = r.localConfig();
   if (request.command === 'stats') { stream.markdown(L.statsMarkdown(L.load(), local?.model)); return {}; }
 
+  const mode = Ro.routingMode(c.get('routing', 'auto'), !!local);
   const learning = c.get('learning.enabled', true);
   const turns = turnsFrom(context.history);
   if (learning) resolvePrevious(turns.at(-1)?.meta, request.prompt, request.command);
@@ -134,11 +137,18 @@ async function handleRequest(request, context, stream, signal) {
   signal.throwIfAborted();
   const routingContext = r.routingSnapshot({ prompt: request.prompt, turns, files: files.filter((f) => !f.open).map((f) => ({ path: f.path, bytes: f.bytes })),
     localContext: local?.contextWindow, rules: r.loadRules(cwd) });
-  let prompt = request.prompt + r.attachmentNote(files);
+  const picked = Ro.pickRole(request.prompt, { roles: Ro.loadRoles(cwd), command: request.command, turns });
+  const role = picked.role;
+  let prompt = Ro.roleNote(role) + request.prompt + r.attachmentNote(files);
   let backend, trail, router, route, decision = null;
   if (forced) {
     backend = request.command;
     trail = [`/${request.command}`];
+  } else if (mode === 'roles') {
+    const pick = Ro.pickBackend(role, { limits: r.readLimits(), installed: r.installed(), frontier: c.get('frontier', 'balance'),
+      reserve: { claude: c.get('claudeReserve', 0.2), codex: c.get('codexReserve', 0) }, files: files.filter((f) => !f.open), stay: picked.stay });
+    backend = pick.backend;
+    trail = [pick.why];
   } else {
     stream.progress('Routing…');
     router = L.currentRouter(L.load(), local?.model).key;
@@ -156,6 +166,7 @@ async function handleRequest(request, context, stream, signal) {
         routers, cost: { [router]: { tokens: route.paidTokens, ms: route.ms } } };
     }
   }
+  trail.unshift(`role: ${role.name} (${picked.why})`);
   // A matching skill adds its playbook to the prompt; one that needs a frontier model raises a local route.
   const skill = r.matchSkill(request.prompt, cwd);
   if (skill) {
@@ -170,8 +181,10 @@ async function handleRequest(request, context, stream, signal) {
     stream.progress(`${r.LABELS[b]} is working…`);
     const p = execution === 'direct' ? { prompt } : r.plan(turns, b, prompt);
     try {
-      const res = await r.run(b, { ...p, execution, cwd, addDirs: r.attachmentDirs(files, cwd), allowEdits: c.get('allowEdits', true), claudeModel: c.get('claudeModel', 'sonnet'),
-        codexEffort: c.get('codexEffort', 'medium'), codexModel: c.get('codexModel', ''), grokModel: c.get('grokModel', ''), signal, onProgress: (m) => stream.progress(m) });
+      const res = await r.run(b, { ...p, execution, cwd, addDirs: r.attachmentDirs(files, cwd), claudeModel: c.get('claudeModel', 'sonnet'),
+        codexEffort: c.get('codexEffort', 'medium'), codexModel: c.get('codexModel', ''), grokModel: c.get('grokModel', ''), signal, onProgress: (m) => stream.progress(m),
+        // The role turns edits off for read-only work and, in roles mode, picks the model.
+        ...Ro.roleOptions(role, b, { allowEdits: c.get('allowEdits', true) }, { models: mode === 'roles' }) });
       signal.throwIfAborted();
       if (!res.text?.trim()) throw Object.assign(new r.BackendError('empty reply', false), { result: res, ms: res.ms });
       res.execution = execution;
@@ -190,7 +203,7 @@ async function handleRequest(request, context, stream, signal) {
     catch (e) {
       if (forced || signal.aborted || e.message === 'cancelled') throw e;
       const next = backend === 'local' ? frontier().backend : e.limited ? backend === 'grok' ? frontier('balance').backend : { claude: 'codex', codex: 'claude' }[backend] : null;
-      if (!next) throw e;
+      if (!next || (mode === 'roles' && next !== 'grok' && !r.installed()[next])) throw e;
       trail.push(backend === 'local' ? `local model ${r.failureReason(e.message)} → ${r.LABELS[next]}` : `${r.LABELS[backend]} hit its limit → ${r.LABELS[next]}`);
       escalated = backend === 'local';
       backend = next;
@@ -215,7 +228,7 @@ async function handleRequest(request, context, stream, signal) {
   if (stopped) stream.markdown(`\n\n> **Stopped before finishing.** ${r.LABELS[backend]} ended its run while saying it would do more. No agent is still working on this. Reply \`continue\` to pick it back up.`);
   const model = res.model === 'unknown' && res.requestedModel ? `unknown; requested ${res.requestedModel}` : r.displayModel(res.model);
   stream.markdown(`\n\n---\n*${stopped ? 'Stopped early' : 'Done'}, no agent still working · ${r.LABELS[backend]} (${model}${res.effort ? ` · ${res.effort} effort` : res.requestedEffort ? ` · requested ${res.requestedEffort} effort` : ''}) · ${res.execution} · ${res.inTok === undefined ? 'unknown' : k(res.inTok)} in / ${res.outTok === undefined ? 'unknown' : k(res.outTok)} out${res.usageIncomplete ? ' · usage incomplete' : ''} · ${trail.join(' → ')}*`);
-  return { metadata: { backend, sessionId: res.sessionId, model: res.model, decisionId: decision?.id, attempt: learning ? attemptInfo : undefined } };
+  return { metadata: { backend, role: role.id, sessionId: res.sessionId, model: res.model, decisionId: decision?.id, attempt: learning ? attemptInfo : undefined } };
 }
 
 // The background learner: after a turn, when nothing else is running, fill in other routers' answers and test
@@ -231,7 +244,8 @@ function reconsider() {
 }
 function learnSoon() {
   const c = vscode.workspace.getConfiguration('fuseway');
-  if (!c.get('learning.enabled', true)) return;
+  // Roles mode has no router to score, and the learner's paid tests would spend quota nobody asked for.
+  if (!c.get('learning.enabled', true) || Ro.routingMode(c.get('routing', 'auto'), !!r.localConfig()) !== 'local-first') return;
   clearTimeout(learnTimer);
   learnTimer = setTimeout(async () => {
     if (busy || learning) return learnSoon();

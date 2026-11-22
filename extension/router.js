@@ -25,6 +25,8 @@ function which(name, fallbacks = []) {
 const CLAUDE = process.env.CLAUDE_BIN || which('claude');
 const GROK = process.env.GROK_BIN || which('grok');
 const CODEX = process.env.CODEX_BIN || which('codex', ['/usr/lib/chatgpt/resources/codex']);
+// which() returns the bare name when nothing is found, so a real path means the CLI is there.
+const installed = () => ({ claude: path.isAbsolute(CLAUDE) && fs.existsSync(CLAUDE), codex: path.isAbsolute(CODEX) && fs.existsSync(CODEX) });
 
 class BackendError extends Error {
   constructor(message, limited) { super(message); this.limited = limited; }
@@ -678,4 +680,4 @@ function usageMarkdown(hours = 5, now = Date.now()) {
 
 const localConfig = () => readJson(LOCAL_CONFIG, null);
 
-module.exports = { failureReason, displayModel, unfinished, loadSkills, matchSkill, skillNote, attachmentNote, attachmentDirs, grokState, grokEvent, isContinuation, localExecution, routingSnapshot, versionMarkdown, statusMarkdown, sessionModels, localConfig, LABELS, DEFAULT_RULES, loadRules, applyRules, keywordHit, matcherPrompt, classify, classifyWith, freeShadows, offline, pickFrontier, readLimits, run, plan, usageMarkdown, sessionInfo, claudeEvent, claudeState, codexEvent, codexState, claudeWindow, codexWindow, askQwen, askHaiku, BackendError };
+module.exports = { installed, keywordRe, failureReason, displayModel, unfinished, loadSkills, matchSkill, skillNote, attachmentNote, attachmentDirs, grokState, grokEvent, isContinuation, localExecution, routingSnapshot, versionMarkdown, statusMarkdown, sessionModels, localConfig, LABELS, DEFAULT_RULES, loadRules, applyRules, keywordHit, matcherPrompt, classify, classifyWith, freeShadows, offline, pickFrontier, readLimits, run, plan, usageMarkdown, sessionInfo, claudeEvent, claudeState, codexEvent, codexState, claudeWindow, codexWindow, askQwen, askHaiku, BackendError };

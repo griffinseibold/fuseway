@@ -472,14 +472,18 @@ async function checks() {
   }
 
   const local = existsSync(LOCAL_CONFIG) ? JSON.parse(read(LOCAL_CONFIG)) : null;
-  if (!local) add('Local model', false, 'not configured', 'fuseway model --install (or "Fuseway: Set Up Local Model" in VS Code)', 'fuseway model --install');
+  // The local model is an extra: without one, @fuseway routes by role to Claude or Codex.
+  if (!local) add('Local model', false, 'not configured (optional: @fuseway sends everything to Claude or Codex by role)', 'fuseway model --install (or "Fuseway: Set Up Local Model" in VS Code)', 'fuseway model --install', true);
   else {
     const models = await listModels(local.url);
     add('Local model', !!models && local.toolCalling, models ? `${local.model} at ${local.url}${local.toolCalling ? '' : ', but tool calls failed'}` : `offline at ${local.url}`,
       models ? 'serve it with tool calling on (llama-server needs --jinja), then fuseway model' : 'start your model server (homelab: ./scripts/lab-mode.py llm --wait), or fuseway model --install');
   }
   const profile = join(homedir(), '.codex', 'local.config.toml');
-  add('Codex local profile', existsSync(profile), existsSync(profile) ? profile : 'missing: @fuseway runs local work through it', 'fuseway model', local ? 'fuseway model' : null);
+  add('Codex local profile', existsSync(profile), existsSync(profile) ? profile : 'missing: @fuseway runs local work through it', 'fuseway model', local ? 'fuseway model' : null, !local);
+  // One signed-in agent CLI is enough; the other is then optional.
+  const agents = out.filter((c) => c.name === 'Claude Code CLI' || c.name === 'Codex CLI');
+  if (agents.some((c) => c.ok)) for (const c of agents) if (!c.ok) c.optional = true;
 
   const nodeVersion = quiet('node', ['--version']);
   const major = Number((nodeVersion.out.match(/v(\d+)/) || [])[1] || 0);

@@ -3,9 +3,10 @@
 Fuseway routes coding requests and runs repository missions with a CEO and delegated agents. Local models, Claude Code, Codex, and opt-in Grok Build use your existing model connections. Type `@fuseway` in VS Code chat, or run the [agent company](company/README.md) from the CLI. Replies and mission records identify the models that did the work.
 
 What it combines:
+- **Agents with roles:** every `@fuseway` request gets one (Planner, Builder, Debugger, Reviewer, Explainer) with its own instructions, read-only or not, and the Claude or OpenAI model that suits it. That's all the extension needs: no local model, no extra setup.
 - **Repository agent companies:** owner-controlled missions, delegated teams, isolated worktrees, verified results and leadership challenges across enabled model profiles.
 - **Routing by how much of each subscription you have left,** read from the windows Claude Code and Codex report.
-- **Local-first by default:** rules and a 79-rule catalog, matched by your local model, decide what needs a frontier model. A background learner scores routers and agents on real outcomes and promotes a better decision maker as the evidence comes in.
+- **Local-first, once you set up a local model:** rules and a 79-rule catalog, matched by your local model, decide what needs a frontier model. A background learner scores routers and agents on real outcomes and promotes a better decision maker as the evidence comes in.
 - **Local model setup for each machine:** find a server, or recommend one for your GPU and download and start it, then check that tool calls work.
 - **One shared agent setup per repo:** a single AGENTS.md for Claude Code, Codex and Copilot, a context cache, skills, and the `fusion` MCP server.
 
@@ -32,8 +33,9 @@ Pick what you want to do, then follow its steps. B and C need A done first.
 **Steps:**
 1. Download `fuseway.vsix` from the [latest release](https://github.com/griffinseibold/fuseway/releases/latest).
 2. In VS Code, open the Command Palette, run **Extensions: Install from VSIX…**, and pick the file.
-3. When the Fuseway notification appears, click **Set Up**. A terminal installs and signs in to the CLIs, and sets up a local model if your machine can run one. Answer its prompts. (No notification? Run **Fuseway: Check Setup**.)
-4. Open the chat and type `@fuseway` followed by your request.
+3. If neither the Claude nor the Codex CLI is signed in, a Fuseway notification appears: click **Set Up**, and a terminal installs and signs in to them. (Run **Fuseway: Check Setup** any time to see what's there.)
+4. Open the chat and type `@fuseway` followed by your request. It picks a role and a model; the footer of each reply says which.
+5. *Optional:* run **Fuseway: Set Up Local Model** to have a local model take the work it can for free. `@fuseway` switches to local-first once one is set up.
 
 ### B. Add the shared setup to a repo
 **You need:** A done, and the repo open in VS Code.
@@ -59,7 +61,9 @@ To write your own missions or let models compete for CEO, see the [company guide
 ```bash
 fuseway extension
 ```
-This builds and installs a chat participant that routes each request itself. The local model classifies it for free, and Claude Haiku double-checks anything that looks hard. Structural rules decide first: a large attachment, a repo path you've pinned, or the local model failing twice all go frontier. The local model then matches the request against a catalog of 79 kinds of work (security, data, architecture and so on, versus docs, formatting and helpers). Anything near a frontier rule escalates, and Haiku breaks ties. Frontier work goes to Claude Code or Codex, whichever has more room left in its 5-hour and weekly windows. A reserve of Claude's windows (20% by default) stays free for your own Claude Code sessions. Each reply says who answered and what it cost. `/local`, `/claude` and `/codex` force a backend, and `/usage` shows both windows. See [extension/README.md](extension/README.md).
+This builds and installs a chat participant that routes each request itself. Every request gets a role from its wording, or from `/plan`, `/build`, `/debug`, `/review` or `/explain`. The role's instructions go to the agent, planners, reviewers and explainers run read-only, and the role picks the model: Opus to plan, Codex at high effort to debug and review, Haiku to explain, Sonnet to build. A provider that is missing or out of room hands over to the other.
+
+Once a local model is set up, routing becomes local-first (`fuseway.routing` chooses). The local model classifies each request for free, and Claude Haiku double-checks anything that looks hard. Structural rules decide first: a large attachment, a repo path you've pinned, or the local model failing twice all go frontier. The local model then matches the request against a catalog of 79 kinds of work (security, data, architecture and so on, versus docs, formatting and helpers). Anything near a frontier rule escalates, and Haiku breaks ties. Frontier work goes to Claude Code or Codex, whichever has more room left in its 5-hour and weekly windows. A reserve of Claude's windows (20% by default) stays free for your own Claude Code sessions. Each reply says who answered and what it cost. `/local`, `/claude` and `/codex` force a backend, and `/usage` shows both windows. See [extension/README.md](extension/README.md).
 
 ## Add to a repo
 ```bash
